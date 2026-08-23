@@ -1,4 +1,4 @@
-// File: D:\astra ai\astra-ai\app\explore\page.tsx
+// File: C:\Users\Pak\Desktop\Astra-AI\Astra_ai\app\explore\page.tsx
 import * as entry from '../../../../app/explore/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

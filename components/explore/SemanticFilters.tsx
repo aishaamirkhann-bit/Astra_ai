@@ -1,10 +1,8 @@
 "use client";
 
-import { useState } from "react";
 import { SlidersHorizontal } from "lucide-react";
 
 const SEMANTIC_TAGS = [
-  "Fits your budget",
   "Verified seller",
   "Bestseller",
   "Fast delivery",
@@ -13,16 +11,22 @@ const SEMANTIC_TAGS = [
 ];
 
 export default function SemanticFilters({
+  minPrice,
+  onMinPriceChange,
   maxPrice,
   onMaxPriceChange,
+  activeTags,
+  onTagsChange,
 }: {
+  minPrice: number;
+  onMinPriceChange: (v: number) => void;
   maxPrice: number;
   onMaxPriceChange: (v: number) => void;
+  activeTags: string[];
+  onTagsChange: (tags: string[]) => void;
 }) {
-  const [active, setActive] = useState<string[]>(["Fits your budget"]);
-
   const toggle = (tag: string) =>
-    setActive((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
+    onTagsChange(activeTags.includes(tag) ? activeTags.filter((t) => t !== tag) : [...activeTags, tag]);
 
   return (
     <aside className="glass h-fit rounded-xl2 p-5">
@@ -35,7 +39,7 @@ export default function SemanticFilters({
         <p className="mb-2 text-xs font-medium text-ink-300">Semantic tags</p>
         <div className="flex flex-wrap gap-2">
           {SEMANTIC_TAGS.map((tag) => {
-            const on = active.includes(tag);
+            const on = activeTags.includes(tag);
             return (
               <button
                 key={tag}
@@ -55,6 +59,11 @@ export default function SemanticFilters({
       </div>
 
       <div>
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-xs font-medium text-ink-300">Min price</p>
+          <p className="font-mono text-[11px] text-astra-cyan">Rs. {minPrice.toLocaleString()}</p>
+        </div>
+        <input type="range" min={0} max={500000} step={5000} value={minPrice} onChange={(e) => onMinPriceChange(Math.min(Number(e.target.value), maxPrice))} className="mb-3 w-full accent-astra-cyan" />
         <div className="mb-2 flex items-center justify-between">
           <p className="text-xs font-medium text-ink-300">Max price</p>
           <p className="font-mono text-[11px] text-astra-cyan">Rs. {maxPrice.toLocaleString()}</p>

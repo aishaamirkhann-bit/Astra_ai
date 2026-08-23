@@ -17,7 +17,7 @@ export default function WalletPage() {
               <Wallet2 className="h-4 w-4 text-astra-cyan" />
               <p className="text-xs font-medium text-ink-300">Available to spend</p>
             </div>
-            <p className="font-display text-3xl font-bold text-ink-100">Rs. 135,000</p>
+            <p className="font-display text-3xl font-bold text-ink-100">Rs. 25,000</p>
             <div className="mt-4 grid grid-cols-2 gap-2">
               <button className="rounded-lg bg-astra-gradient py-2 text-xs font-semibold text-white hover:opacity-90">
                 Top Up

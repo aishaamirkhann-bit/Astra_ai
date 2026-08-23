@@ -53,7 +53,7 @@ export default function GoalsWalletRail() {
           <ChevronRight className="h-3.5 w-3.5 text-ink-500" />
         </div>
         <p className="mt-1 text-[11px] text-ink-500">Available to spend</p>
-        <p className="mt-0.5 font-display text-lg font-semibold text-ink-100">Rs. 135,000</p>
+        <p className="mt-0.5 font-display text-lg font-semibold text-ink-100">Rs. 25,000</p>
       </Link>
     </section>
   );

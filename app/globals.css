@@ -1,9 +1,9 @@
+/* Space Grotesk (display, technical/geometric) + Inter (body) + JetBrains Mono (data/timers/logs) */
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-/* Space Grotesk (display, technical/geometric) + Inter (body) + JetBrains Mono (data/timers/logs) */
-@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap");
 
 :root {
   --font-display: "Space Grotesk", sans-serif;
@@ -76,6 +76,7 @@ body {
   background-color: rgb(var(--base-950));
   color: rgb(var(--ink-100));
   font-family: var(--font-body);
+  overflow-x: hidden;
   transition: background-color 0.25s ease, color 0.25s ease;
 }
 

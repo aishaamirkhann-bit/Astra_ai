@@ -1,4 +1,4 @@
-// File: D:\astra ai\astra-ai\app\layout.tsx
+// File: C:\Users\Pak\Desktop\Astra-AI\Astra_ai\app\layout.tsx
 import * as entry from '../../../app/layout.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

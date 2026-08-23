@@ -14,9 +14,13 @@ type Mode = (typeof MODES)[number]["id"];
 export default function MultiModalSearch({
   query,
   onQueryChange,
+  onVoiceFile,
+  onImageFile,
 }: {
   query: string;
   onQueryChange: (q: string) => void;
+  onVoiceFile: (file: File) => void;
+  onImageFile: (file: File) => void;
 }) {
   const [mode, setMode] = useState<Mode>("text");
   const [listening, setListening] = useState(false);
@@ -62,10 +66,7 @@ export default function MultiModalSearch({
       )}
 
       {mode === "voice" && (
-        <button
-          onClick={() => setListening((v) => !v)}
-          className="flex w-full items-center justify-center gap-4 rounded-xl border border-base-600 bg-base-800/60 px-4 py-6 transition-colors hover:border-astra-violet/40"
-        >
+        <label className="flex w-full cursor-pointer items-center justify-center gap-4 rounded-xl border border-base-600 bg-base-800/60 px-4 py-6 transition-colors hover:border-astra-violet/40">
           <div className="flex h-8 items-end gap-1">
             {[6, 14, 22, 12, 18, 8].map((h, i) => (
               <span
@@ -80,11 +81,23 @@ export default function MultiModalSearch({
           </div>
           <div className="text-left">
             <p className="text-sm font-medium text-ink-100">
-              {listening ? "Sun raha hoon, boliye…" : "Tap and speak your search"}
+              {listening ? "Voice file selected" : "Upload a voice search"}
             </p>
             <p className="text-[11px] text-ink-500">English · Urdu · Roman Urdu supported</p>
           </div>
-        </button>
+          <input
+            type="file"
+            accept="audio/*"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) {
+                setListening(true);
+                onVoiceFile(file);
+              }
+            }}
+          />
+        </label>
       )}
 
       {mode === "image" && (
@@ -94,7 +107,15 @@ export default function MultiModalSearch({
           <p className="text-[11px] text-ink-500">
             ASTRA finds visually and semantically similar listings
           </p>
-          <input type="file" accept="image/*" className="hidden" />
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) onImageFile(file);
+            }}
+          />
         </label>
       )}
     </section>

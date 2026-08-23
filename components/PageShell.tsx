@@ -15,9 +15,9 @@ export default function PageShell({
   return (
     <div className="mx-auto flex max-w-[1600px]">
       <Sidebar active={active} />
-      <div className="flex-1">
+      <div className="min-w-0 flex-1">
         <TopBar />
-        <main className="flex flex-col gap-6 p-4 lg:p-8">
+        <main className="flex min-w-0 flex-col gap-6 p-4 lg:p-8">
           <div>
             <h1 className="font-display text-xl font-semibold text-ink-100">{title}</h1>
             <p className="mt-1 text-sm text-ink-500">{subtitle}</p>
