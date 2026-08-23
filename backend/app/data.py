@@ -1,5 +1,7 @@
 from typing import Any
 
+from app.models.explore import ProductModel
+
 
 def _image(keywords: str) -> str:
     images = {
@@ -15,7 +17,7 @@ def _image(keywords: str) -> str:
 
 
 # Replace this in-memory repository with a PostgreSQL/pgvector or Elasticsearch adapter.
-PRODUCTS: list[dict[str, Any]] = [
+PRODUCTS: list[ProductModel] = [
     {
         "id": "samsung-galaxy-s25-ultra",
         "title": "Samsung Galaxy S25 Ultra",

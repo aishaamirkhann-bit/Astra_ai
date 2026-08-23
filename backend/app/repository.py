@@ -6,6 +6,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 from app.data import PRODUCTS
+from app.models.explore import ProductModel
 
 _BACKEND_DIR = Path(__file__).resolve().parents[1]
 load_dotenv(_BACKEND_DIR / ".env")
@@ -125,7 +126,7 @@ class ProductRepository:
         ]
 
     @staticmethod
-    def _deserialize(row: Any) -> dict[str, Any]:
+    def _deserialize(row: Any) -> ProductModel:
         product = dict(row)
         product["is_verified_seller"] = bool(product["is_verified_seller"])
         product["semantic_tags"] = json.loads(product["semantic_tags"])
