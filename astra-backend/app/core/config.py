@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
 
     DATABASE_URL: str = "sqlite:///./astra.db"
+    REDIS_URL: str = "redis://localhost:6379/0"
+    DEAL_EVENT_CHANNEL: str = "astra:deals"
+    DEAL_SCAN_INTERVAL_SECONDS: int = 30
+    DEAL_RESERVATION_MINUTES: int = 10
 
     FRONTEND_ORIGIN: str = "http://localhost:3000"
 

@@ -8,6 +8,10 @@ import type {
   WalletDetailOut,
   WalletOut,
   UserRole,
+  DealOut,
+  DealDetail,
+  DealListResponse,
+  DealReservationResponse,
 } from "@/lib/types";
 import { getToken } from "@/lib/auth";
 
@@ -93,6 +97,29 @@ export function resendOtp(payload: { otp_token: string }): Promise<OtpRequiredRe
 /** Single call that hydrates the entire Home page in one round-trip. */
 export function getHomePage(): Promise<HomePageOut> {
   return apiFetch<HomePageOut>("/home");
+}
+
+/** Promoted listings shown on the Deals page. */
+export function getDeals(): Promise<DealOut[]> {
+  return apiFetch<DealListResponse>("/deals?sort_by=highest_discount&page=1&page_size=100").then((response) => response.items);
+}
+
+export function getDealDetails(dealId: string): Promise<DealDetail> {
+  return apiFetch<DealDetail>(`/deals/${dealId}/details`);
+}
+
+export function reserveDeal(
+  dealId: string,
+  selection: { quantity: number; size?: string; color?: string },
+): Promise<DealReservationResponse> {
+  return apiFetch<DealReservationResponse>(`/deals/${dealId}/reserve`, {
+    method: "POST",
+    body: JSON.stringify(selection),
+  });
+}
+
+export function getDealsWebSocketUrl(): string {
+  return `${API_URL.replace(/^http/, "ws")}/ws/deals`;
 }
 
 /** HumanApprovalWidget's "Approve Transaction" button. */

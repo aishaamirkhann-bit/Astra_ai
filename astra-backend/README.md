@@ -179,7 +179,39 @@ Backend already has CORS enabled for `http://localhost:3000` (see `.env` → `FR
   (same `DATABASE_URL`). Seeding twice is safe — `seed.py` skips products that
   already exist by `id`.
 
-## 7. Next Steps (beyond Home page)
+## 7. Real-time Deals pipeline
+
+Production uses PostgreSQL with pgvector plus Redis:
+
+```bash
+docker compose up --build
+psql "$DATABASE_URL" -f migrations/20260829_deals_realtime_pipeline.sql
+```
+
+The AI Trust Agent evaluates the rolling 30-day market average every
+`DEAL_SCAN_INTERVAL_SECONDS`. A deal is active only when its listing price is
+at least 15% below that average and its weighted trust score is at least 75.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/deals` | Active paginated deal summaries |
+| GET | `/api/v1/deals/{id}/details` | Modal data, variants, trust, price history |
+| POST | `/api/v1/deals/{id}/reserve` | Row-locked stock reservation |
+| WS | `/ws/deals` | Redis-backed deal and inventory events |
+
+Redis channel `astra:deals` emits `deal_updated`, `stock_changed`, and
+`deal_expired`. If Redis is unavailable in local development, the API keeps
+working and broadcasts to WebSocket clients in-process. Apply the SQL migration
+before deploying against an existing PostgreSQL/Supabase database.
+
+The migration enables `vector`, stores `products.embedding` as
+`vector(1536)`, and creates an HNSW cosine-similarity index. Supabase projects
+must have the Vector extension enabled. Checkout obtains a Redis distributed
+lock per deal and then a PostgreSQL `SELECT ... FOR UPDATE` row lock; both are
+required in multi-instance production deployments. Every Trust Agent decision
+and stock reservation is written to `deal_audit_logs` with its scoring inputs.
+
+## 8. Next Steps (beyond Home page)
 
 - Add Alembic for real migrations (`alembic init alembic`) once schema stabilizes.
 - Build `/explore`, `/goals`, `/orders`, `/wallet`, `/messages`, `/b2b` endpoint modules

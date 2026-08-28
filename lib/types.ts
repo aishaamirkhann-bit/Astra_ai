@@ -25,6 +25,62 @@ export interface Product {
   description: string | null;
 }
 
+export interface DealOut {
+  id: string;
+  slug: string;
+  name: string;
+  price_display: string;
+  price: number;
+  market_price_display: string;
+  market_price: number;
+  savings_display: string;
+  savings: number;
+  discount_percent: number;
+  rating: number;
+  total_reviews: number;
+  tag: "Bestseller" | "New" | "Mega Deal";
+  trust: {
+    overall: number;
+    seller_fulfillment: number;
+    authenticity_sentiment: number;
+    price_stability: number;
+    seller_verified: boolean;
+    summary: string;
+  };
+  seller: string;
+  category: "Tech" | "Fashion" | "Audio" | "Accessories";
+  image: string;
+  stock_remaining: number;
+  expires_at: string | null;
+}
+
+export interface DealDetail extends DealOut {
+  description: string;
+  gallery: string[];
+  sizes: string[];
+  colors: string[];
+  price_history: Array<{ observed_at: string; label: string; listing_price: number; market_average: number }>;
+  audit_reasoning: Record<string, unknown>;
+}
+
+export interface DealListResponse {
+  items: DealOut[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
+export interface DealReservationResponse {
+  reservation_id: string;
+  deal_id: string;
+  status: "reserved";
+  quantity: number;
+  stock_remaining: number;
+  expires_at: string;
+  message: string;
+}
+
 export interface CheckItem {
   label: string;
   detail: string;
