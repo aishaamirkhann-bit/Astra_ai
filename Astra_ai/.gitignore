@@ -1,0 +1,32 @@
+# Node
+node_modules/
+.next/
+out/
+
+# Python
+venv/
+__pycache__/
+*.py[cod]
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+@"
+node_modules/
+.next/
+out/
+dist/
+build/
+.env
+.env.local
+*.log
+"@ | Set-Content .gitignore
