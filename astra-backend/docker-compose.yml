@@ -1,0 +1,32 @@
+version: "3.9"
+
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # Overrides .env's DATABASE_URL to point at the postgres service below.
+      # Comment this out (and the db service) to keep using SQLite instead.
+      DATABASE_URL: postgresql://astra:astra@db:5432/astra_db
+    depends_on:
+      - db
+    volumes:
+      - .:/app
+
+  db:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: astra
+      POSTGRES_PASSWORD: astra
+      POSTGRES_DB: astra_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - astra_pg_data:/var/lib/postgresql/data
+
+volumes:
+  astra_pg_data:
