@@ -5,6 +5,7 @@ import CategoryChips from "@/components/explore/CategoryChips";
 import SemanticFilters from "@/components/explore/SemanticFilters";
 import HybridResultsGrid, { type ExploreProduct } from "@/components/explore/HybridResultsGrid";
 import SmartPrompt from "@/components/explore/SmartPrompt";
+import { ImageIcon, Mic, RefreshCw, RotateCcw, X } from "lucide-react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -27,10 +28,22 @@ export default function ExploreClient({
   const [error, setError] = useState<string | null>(null);
   const [budgetMode, setBudgetMode] = useState(false);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
+  const [searchContext, setSearchContext] = useState<{ mode: "voice" | "image"; label: string; previewUrl?: string } | null>(null);
 
   useEffect(() => {
     void fetch(`${API_URL}/api/v1/explore/wallet`).then((response) => response.json()).then((payload) => setWalletBalance(payload.available_balance));
   }, []);
+
+  const resetExplore = () => {
+    setBudgetMode(false);
+    setQuery("");
+    setCategory(null);
+    setMinPrice(0);
+    setMaxPrice(500000);
+    setSemanticTags([]);
+    setSortBy("most_relevant");
+  };
 
   const checkBudget = async () => {
     setBudgetMode(true);
@@ -61,6 +74,7 @@ export default function ExploreClient({
     body.append("query_type", queryType);
     body.append(queryType === "voice" ? "audio_file" : "image_file", file);
     body.append("category", category || "All");
+    body.append("min_price", String(minPrice));
     body.append("max_price", String(maxPrice));
     body.append("sort_by", sortBy);
     body.append("limit", "50");
@@ -92,7 +106,7 @@ export default function ExploreClient({
       body.append("query_type", "text");
       body.append("text_query", query);
       body.append("category", category || "All");
-      body.append("min_price", "0");
+      body.append("min_price", String(minPrice));
       body.append("max_price", String(maxPrice));
       body.append("sort_by", sortBy);
       body.append("page", "1");
@@ -100,7 +114,7 @@ export default function ExploreClient({
       semanticTags.forEach((tag) => body.append("semantic_tags", tag));
 
       try {
-        const isDefaultCatalogRequest = !query.trim() && !category && maxPrice === 500000 && semanticTags.length === 0 && sortBy === "most_relevant";
+        const isDefaultCatalogRequest = !query.trim() && !category && minPrice === 0 && maxPrice === 500000 && semanticTags.length === 0 && sortBy === "most_relevant";
         const response = await fetch(
           isDefaultCatalogRequest ? `${API_URL}/api/v1/explore/products` : `${API_URL}/api/v1/explore/search`,
           isDefaultCatalogRequest ? { signal: controller.signal } : { method: "POST", body, signal: controller.signal },
@@ -125,7 +139,7 @@ export default function ExploreClient({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [category, maxPrice, minPrice, query, semanticTags, sortBy, budgetMode]);
+  }, [category, maxPrice, minPrice, query, semanticTags, sortBy, budgetMode, retryKey]);
 
   useEffect(() => {
     const handleSearch = (event: Event) => {
@@ -135,33 +149,40 @@ export default function ExploreClient({
       const detail = (event as CustomEvent<{ file: File; queryType: "voice" | "image" }>).detail;
       void searchWithFile(detail.file, detail.queryType);
     };
+    const handleSearchContext = (event: Event) => setSearchContext((event as CustomEvent<{ mode: "voice" | "image"; label: string; previewUrl?: string }>).detail);
     window.addEventListener("astra:search", handleSearch);
     window.addEventListener("astra:file-search", handleFileSearch);
+    window.addEventListener("astra:search-context", handleSearchContext);
     return () => {
       window.removeEventListener("astra:search", handleSearch);
       window.removeEventListener("astra:file-search", handleFileSearch);
+      window.removeEventListener("astra:search-context", handleSearchContext);
     };
-  }, []);
+  }, [category, minPrice, maxPrice, sortBy, semanticTags]);
 
   return (
     <>
       <SmartPrompt onSelect={(prompt) => { setBudgetMode(false); window.dispatchEvent(new CustomEvent("astra:search", { detail: { query: prompt, commit: true } })); }} onBudgetCheck={() => void checkBudget()} />
       {walletBalance !== null && <p className="-mt-4 text-xs text-ink-500">Available Balance: <span className="font-semibold text-ink-100">Rs. {walletBalance.toLocaleString()}</span></p>}
+      {searchContext && <div className="glass flex items-center gap-3 rounded-xl2 p-3"><div className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-lg bg-base-800">{searchContext.mode === "image" && searchContext.previewUrl ? <img src={searchContext.previewUrl} alt="Selected search" className="h-full w-full object-cover" /> : <Mic className="h-5 w-5 text-astra-cyan" />}</div><div className="min-w-0 flex-1"><p className="flex items-center gap-1.5 text-xs font-semibold text-ink-100">{searchContext.mode === "image" ? <ImageIcon className="h-3.5 w-3.5 text-astra-cyan" /> : <Mic className="h-3.5 w-3.5 text-astra-cyan" />}{searchContext.mode === "image" ? "Image search" : "Voice search"}</p><p className="mt-0.5 truncate text-[11px] text-ink-500">{searchContext.label}</p></div><button type="button" onClick={() => setSearchContext(null)} aria-label="Dismiss search context" className="text-ink-500 transition hover:text-ink-100"><X className="h-4 w-4" /></button></div>}
 
-      <CategoryChips selected={category} onSelect={setCategory} />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <CategoryChips selected={category} onSelect={(value) => { setBudgetMode(false); setCategory(value); }} />
+        {(query || category || minPrice !== 0 || maxPrice !== 500000 || semanticTags.length > 0 || sortBy !== "most_relevant") && <button type="button" onClick={resetExplore} className="inline-flex items-center gap-1.5 text-xs font-medium text-astra-cyan transition hover:text-ink-100"><RotateCcw className="h-3.5 w-3.5" /> Reset all</button>}
+      </div>
 
       <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
         <SemanticFilters
           maxPrice={maxPrice}
-          onMaxPriceChange={setMaxPrice}
+          onMaxPriceChange={(value) => { setBudgetMode(false); setMaxPrice(value); }}
           minPrice={minPrice}
-          onMinPriceChange={setMinPrice}
+          onMinPriceChange={(value) => { setBudgetMode(false); setMinPrice(value); }}
           activeTags={semanticTags}
-          onTagsChange={setSemanticTags}
+          onTagsChange={(value) => { setBudgetMode(false); setSemanticTags(value); }}
         />
         <div>
-          {error && <p className="mb-3 rounded-lg border border-signal-reject/30 bg-signal-reject/10 p-3 text-xs text-signal-reject">{error}</p>}
-          {loading ? <p className="text-sm text-ink-500">Searching Astra...</p> : <HybridResultsGrid products={products} totalResults={totalResults} sortBy={sortBy} onSortChange={setSortBy} />}
+          {error && <div className="mb-3 flex flex-col gap-3 rounded-xl border border-signal-reject/30 bg-signal-reject/10 p-4 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs text-signal-reject">{error}</p><button type="button" onClick={() => { if (budgetMode) void checkBudget(); else setRetryKey((value) => value + 1); }} className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-signal-reject/30 px-3 py-1.5 text-xs font-medium text-signal-reject transition hover:bg-signal-reject/10"><RefreshCw className="h-3.5 w-3.5" /> Retry</button></div>}
+          <HybridResultsGrid products={products} totalResults={totalResults} sortBy={sortBy} onSortChange={(value) => { setBudgetMode(false); setSortBy(value); }} loading={loading} />
         </div>
       </div>
     </>

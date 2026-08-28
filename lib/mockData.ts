@@ -170,6 +170,7 @@ export const CATEGORIES = [
   { slug: "clothing", name: "Clothing & Fashion", image: img("fashion,clothing"), count: 341 },
   { slug: "makeup-beauty", name: "Makeup & Beauty", image: img("makeup,cosmetics"), count: 187 },
   { slug: "home-appliances", name: "Home Appliances", image: img("kitchenappliance"), count: 156 },
+  { slug: "households", name: "Households", image: img("household,home"), count: 0 },
   { slug: "home-living", name: "Home & Living", image: img("homedecor,interior"), count: 122 },
 ] as const;
 
@@ -181,6 +182,7 @@ export const EXPLORE_CATEGORY_TAGS = [
   "Clothing & Fashion",
   "Makeup & Beauty",
   "Home Appliances",
+  "Households",
 ] as const;
 
 export const PIPELINE_STAGES = [

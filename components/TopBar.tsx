@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { Search, Mic, Camera, Bell, ChevronDown, User } from "lucide-react";
 import ThemeToggle from "@/components/ThemeToggle";
 import MobileNav from "@/components/MobileNav";
@@ -34,6 +35,8 @@ export default function TopBar() {
   const [history, setHistory] = useState<string[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     const handleSearch = (event: Event) => {
@@ -55,10 +58,15 @@ export default function TopBar() {
     setHistory(nextHistory);
     window.localStorage.setItem("astra-search-history", JSON.stringify(nextHistory));
     window.dispatchEvent(new CustomEvent("astra:search", { detail: { query: trimmedValue, commit: true } }));
+    if (pathname !== "/explore") router.push(`/explore?q=${encodeURIComponent(trimmedValue)}`);
   };
 
   const selectFile = (file: File, queryType: "image") => {
-    if (queryType === "image") setImageSelected(true);
+    if (queryType === "image") {
+      setImageSelected(true);
+      setVoiceStatus(`Searching from ${file.name}`);
+      window.dispatchEvent(new CustomEvent("astra:search-context", { detail: { mode: "image", label: file.name, previewUrl: URL.createObjectURL(file) } }));
+    }
     window.dispatchEvent(new CustomEvent("astra:file-search", { detail: { file, queryType } }));
   };
 
@@ -86,6 +94,7 @@ export default function TopBar() {
       const transcript = event.results[0][0].transcript;
       setQuery(transcript);
       setVoiceStatus("");
+      window.dispatchEvent(new CustomEvent("astra:search-context", { detail: { mode: "voice", label: transcript } }));
       commitSearch(transcript);
     };
     recognition.onend = () => {
@@ -127,11 +136,11 @@ export default function TopBar() {
             )}
           </div>
           {query && <button type="button" onClick={() => updateQuery("")} aria-label="Clear search" className="shrink-0 text-xs text-ink-500 hover:text-ink-100">Clear</button>}
-          {voiceStatus && <span className="hidden max-w-32 truncate text-[10px] text-signal-hold sm:inline" title={voiceStatus}>{voiceStatus}</span>}
+          {voiceStatus && <span className="hidden max-w-36 truncate text-[10px] text-signal-hold sm:inline" title={voiceStatus}>{voiceStatus}</span>}
           <button type="button" aria-label={listening ? "Stop voice search" : "Start voice search"} aria-pressed={listening} onClick={() => void toggleVoiceSearch()} className={["grid h-8 w-8 shrink-0 place-items-center rounded-full transition-colors", listening ? "animate-pulse bg-astra-gradient shadow-glow" : "bg-base-700 hover:bg-base-600"].join(" ")}>
             <Mic className={["h-4 w-4", listening ? "text-white" : "text-ink-300"].join(" ")} />
           </button>
-          <label aria-label="Image search" className={["grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-full transition-colors", imageSelected ? "bg-astra-gradient text-white shadow-glow" : "bg-base-700 text-ink-300 hover:bg-base-600 hover:text-ink-100"].join(" ")}>
+          <label title="Search with an image" aria-label="Image search" className={["grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-full transition-colors", imageSelected ? "bg-astra-gradient text-white shadow-glow" : "bg-base-700 text-ink-300 hover:bg-base-600 hover:text-ink-100"].join(" ")}>
             <Camera className="h-4 w-4" />
             <input type="file" accept="image/*" className="hidden" onChange={(event) => {
               const file = event.target.files?.[0];

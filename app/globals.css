@@ -124,3 +124,37 @@ body {
   background-size: cover;
   background-position: center;
 }
+
+/* Dual-thumb price range used by the category catalogue toolbar. */
+.dual-range {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  pointer-events: none;
+}
+.dual-range::-webkit-slider-runnable-track { height: 6px; background: transparent; }
+.dual-range::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -6px;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(var(--astra-cyan));
+  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.18);
+  cursor: grab;
+  pointer-events: auto;
+}
+.dual-range-max::-webkit-slider-thumb { background: #9867ef; }
+.dual-range::-moz-range-track { height: 6px; background: transparent; }
+.dual-range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(var(--astra-cyan));
+  cursor: grab;
+  pointer-events: auto;
+}
+.dual-range-max::-moz-range-thumb { background: #9867ef; }
