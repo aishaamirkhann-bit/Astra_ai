@@ -159,3 +159,10 @@ build/
 .env.local
 *.log
 "@ | Set-Content .gitignore
+
+
+node_modules/
+.next/
+.env
+.env.local
+*.log
