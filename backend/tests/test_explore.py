@@ -47,6 +47,24 @@ def test_products_endpoint_returns_database_catalog() -> None:
     assert response.json()[1]["id"] == "lenovo-ideapad-slim-5"
 
 
+def test_categories_are_mapped_to_products() -> None:
+    response = client.get("/api/v1/explore/categories")
+    assert response.status_code == 200
+    categories = {item["name"]: item["product_count"] for item in response.json()}
+    assert categories["Mobiles"] == 2
+    assert categories["Laptops & Computers"] == 2
+    assert categories["Audio & Wearables"] == 3
+    assert categories["Makeup & Beauty"] == 0
+    assert categories["Households"] == 0
+
+
+def test_category_products_endpoint_filters_in_database() -> None:
+    response = client.get("/api/v1/explore/categories/mobiles/products?min_price=120000&max_price=130000")
+    assert response.status_code == 200
+    assert response.json()["total_results"] == 1
+    assert response.json()["items"][0]["id"] == "xiaomi-14-civi"
+
+
 def test_wallet_endpoint_returns_available_balance() -> None:
     response = client.get("/api/v1/explore/wallet")
     assert response.status_code == 200
@@ -115,3 +133,14 @@ def test_image_search_accepts_image_upload() -> None:
     )
     assert response.status_code == 200
     assert response.json()["total_results"] >= 1
+
+
+def test_image_search_uses_filename_category_hint() -> None:
+    response = client.post(
+        "/api/v1/explore/search",
+        data={"query_type": "image"},
+        files={"image_file": ("headphones-product.jpg", b"fake-image", "image/jpeg")},
+    )
+    assert response.status_code == 200
+    assert response.json()["query"] == "headphones audio"
+    assert all(item["category"] == "Audio & Wearables" for item in response.json()["items"])

@@ -5,6 +5,7 @@ class ProductModel(TypedDict):
     id: str
     title: str
     category: str
+    category_id: str | None
     price: float
     rating: float
     total_reviews: int
