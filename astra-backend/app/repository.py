@@ -66,20 +66,18 @@ class ProductRepository:
                     """
                 )
                 self._ensure_product_category_column(connection, "%s")
-                count_row = connection.execute("SELECT COUNT(*) AS product_count FROM products").fetchone()
-                product_count = count_row["product_count"]
-                if product_count == 0:
-                    with connection.cursor() as cursor:
-                        cursor.executemany(
-                            """
-                            INSERT INTO products (
-                                id, title, category, price, rating, total_reviews, seller_name,
-                                is_verified_seller, badge, image_url, semantic_tags, description,
-                                fit, trust, search_terms
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                            """,
-                            self._seed_rows(),
-                        )
+                with connection.cursor() as cursor:
+                    cursor.executemany(
+                        """
+                        INSERT INTO products (
+                            id, title, category, price, rating, total_reviews, seller_name,
+                            is_verified_seller, badge, image_url, semantic_tags, description,
+                            fit, trust, search_terms
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (id) DO NOTHING
+                        """,
+                        self._seed_rows(),
+                    )
                 self._refresh_image_urls(connection, "%s")
                 self._refresh_seed_metadata(connection, "%s")
                 connection.execute("CREATE INDEX IF NOT EXISTS idx_products_category_id ON products(category_id)")
@@ -107,18 +105,16 @@ class ProductRepository:
                 """
             )
             self._ensure_product_category_column(connection, "?")
-            product_count = connection.execute("SELECT COUNT(*) FROM products").fetchone()[0]
-            if product_count == 0:
-                connection.executemany(
-                    """
-                    INSERT INTO products (
-                        id, title, category, price, rating, total_reviews,
-                        seller_name, is_verified_seller, badge, image_url,
-                        semantic_tags, description, fit, trust, search_terms
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    self._seed_rows(),
-                )
+            connection.executemany(
+                """
+                INSERT OR IGNORE INTO products (
+                    id, title, category, price, rating, total_reviews,
+                    seller_name, is_verified_seller, badge, image_url,
+                    semantic_tags, description, fit, trust, search_terms
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                self._seed_rows(),
+            )
             self._refresh_image_urls(connection, "?")
             self._refresh_seed_metadata(connection, "?")
             connection.execute("CREATE INDEX IF NOT EXISTS idx_products_category_id ON products(category_id)")

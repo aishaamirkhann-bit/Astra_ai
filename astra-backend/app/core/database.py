@@ -13,6 +13,8 @@ from app.core.config import settings
 
 def resolve_database_url(database_url: str) -> str:
     """Resolve relative SQLite files from the backend root, not the shell cwd."""
+    if database_url.startswith("postgresql://"):
+        return database_url.replace("postgresql://", "postgresql+psycopg://", 1)
     sqlite_relative_prefix = "sqlite:///./"
     if not database_url.startswith(sqlite_relative_prefix):
         return database_url
@@ -24,7 +26,11 @@ def resolve_database_url(database_url: str) -> str:
 database_url = resolve_database_url(settings.DATABASE_URL)
 connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
 
-engine = create_engine(database_url, connect_args=connect_args)
+engine_options = {"pool_pre_ping": True}
+if database_url.startswith("postgresql"):
+    engine_options.update({"pool_size": 10, "max_overflow": 20, "pool_recycle": 1800})
+
+engine = create_engine(database_url, connect_args=connect_args, **engine_options)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()

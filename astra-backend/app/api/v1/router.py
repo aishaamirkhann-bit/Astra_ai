@@ -12,6 +12,7 @@ from app.api.v1.endpoints import (
     wallet,
     notifications,
     explore,
+    deals,
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -27,3 +28,4 @@ api_router.include_router(goals.router)
 api_router.include_router(wallet.router)
 api_router.include_router(notifications.router)
 api_router.include_router(explore.router)
+api_router.include_router(deals.router)

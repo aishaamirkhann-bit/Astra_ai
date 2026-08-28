@@ -9,6 +9,7 @@ from app.models.goal import Goal
 from app.models.order import Order, OrderStatus
 from app.models.pipeline import PipelineRun, PipelineStageLog, AuditLog
 from app.models.notification import Notification
+from app.models.deal import Deal, DealAuditLog, DealReservation, MarketPriceHistory, SellerMetric
 
 __all__ = [
     "User",
@@ -22,4 +23,9 @@ __all__ = [
     "PipelineStageLog",
     "AuditLog",
     "Notification",
+    "Deal",
+    "DealAuditLog",
+    "DealReservation",
+    "MarketPriceHistory",
+    "SellerMetric",
 ]
