@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     APP_NAME: str = "ASTRA AI Backend"
     APP_ENV: str = "development"
-    DEBUG: bool = True
+    APP_DEBUG: bool = True
 
     SECRET_KEY: str = "dev-secret-change-me"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60

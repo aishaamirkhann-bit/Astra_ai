@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.database import Base, engine
 from app.api.v1.router import api_router
-from app.websockets.pipeline_ws import router as pipeline_ws_router
+from app.realtime.pipeline_ws import router as pipeline_ws_router
 
 # Import models so Base.metadata knows about every table before create_all runs.
 import app.models  # noqa: F401
