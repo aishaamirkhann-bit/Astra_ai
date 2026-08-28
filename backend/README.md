@@ -15,6 +15,8 @@ The API is available at `http://localhost:8000`, with interactive docs at `/docs
 ## Product endpoints
 
 - `GET /api/v1/explore/products` fetches the complete catalog from the database.
+- `GET /api/v1/explore/categories` fetches categories with mapped product counts.
+- `GET /api/v1/explore/categories/{slug}/products` fetches paginated products for one category.
 - `GET /api/v1/explore/products/{product_id}` fetches one product from the database.
 - `POST /api/v1/explore/search` searches and filters database products.
 

@@ -1,5 +1,8 @@
+"use client";
+
 import Link from "next/link";
-import { Star, ShieldCheck, SearchX } from "lucide-react";
+import { Heart, Scale, SearchX, ShieldCheck, Star, X } from "lucide-react";
+import { useEffect, useState } from "react";
 export type ExploreProduct = {
   id: string;
   title: string;
@@ -13,6 +16,7 @@ export type ExploreProduct = {
   badge: string | null;
   image_url: string;
   semantic_tags: string[];
+  trust: number;
 };
 
 export default function HybridResultsGrid({
@@ -20,12 +24,36 @@ export default function HybridResultsGrid({
   totalResults,
   sortBy,
   onSortChange,
+  loading,
 }: {
   products: ExploreProduct[];
   totalResults: number;
   sortBy: string;
   onSortChange: (value: string) => void;
+  loading: boolean;
 }) {
+  const [savedIds, setSavedIds] = useState<string[]>([]);
+  const [compareIds, setCompareIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(window.localStorage.getItem("astra:saved-products") || "[]");
+      if (Array.isArray(saved)) setSavedIds(saved);
+    } catch { /* Ignore corrupted local data. */ }
+  }, []);
+
+  const toggleSaved = (id: string) => {
+    setSavedIds((current) => {
+      const next = current.includes(id) ? current.filter((item) => item !== id) : [...current, id];
+      window.localStorage.setItem("astra:saved-products", JSON.stringify(next));
+      return next;
+    });
+  };
+  const toggleCompare = (id: string) => {
+    setCompareIds((current) => current.includes(id) ? current.filter((item) => item !== id) : current.length < 2 ? [...current, id] : [current[1], id]);
+  };
+  const comparedProducts = products.filter((product) => compareIds.includes(product.id));
+
   return (
     <section>
       <div className="mb-4 flex items-center justify-between">
@@ -41,7 +69,14 @@ export default function HybridResultsGrid({
         </select>
       </div>
 
-      {products.length === 0 ? (
+      {comparedProducts.length > 0 && <div className="glass mb-4 rounded-xl2 p-4">
+        <div className="flex items-center justify-between gap-3"><p className="flex items-center gap-1.5 text-xs font-semibold text-ink-100"><Scale className="h-4 w-4 text-astra-cyan" /> Compare products {comparedProducts.length}/2</p><button type="button" onClick={() => setCompareIds([])} className="text-xs text-ink-500 hover:text-ink-100">Clear</button></div>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">{comparedProducts.map((product) => <div key={product.id} className="rounded-lg border border-base-600 bg-base-800/50 p-3"><div className="flex items-start justify-between gap-2"><p className="text-xs font-medium text-ink-100">{product.title}</p><button type="button" onClick={() => toggleCompare(product.id)} aria-label={`Remove ${product.title} from comparison`} className="text-ink-500 hover:text-ink-100"><X className="h-3.5 w-3.5" /></button></div><div className="mt-2 grid grid-cols-3 gap-2 text-[10px] text-ink-500"><span>Price<br /><b className="text-ink-100">{product.formatted_price}</b></span><span>Rating<br /><b className="text-ink-100">{product.rating}/5</b></span><span>Trust<br /><b className="text-signal-good">{product.trust}%</b></span></div></div>)}</div>
+      </div>}
+
+      {loading ? (
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">{Array.from({ length: 8 }).map((_, index) => <div key={index} className="glass animate-pulse rounded-xl2 p-3"><div className="aspect-square rounded-lg bg-base-700" /><div className="mt-3 h-3 w-4/5 rounded bg-base-700" /><div className="mt-2 h-3 w-2/5 rounded bg-base-700" /></div>)}</div>
+      ) : products.length === 0 ? (
         <div className="glass flex flex-col items-center gap-2 rounded-xl2 p-10 text-center">
           <SearchX className="h-6 w-6 text-ink-500" />
           <p className="text-sm font-medium text-ink-100">No matches yet</p>
@@ -64,6 +99,7 @@ export default function HybridResultsGrid({
                     {p.badge}
                   </span>
                 )}
+                <button type="button" onClick={(event) => { event.preventDefault(); toggleSaved(p.id); }} aria-label={savedIds.includes(p.id) ? `Remove ${p.title} from saved items` : `Save ${p.title}`} className={["absolute right-2 top-2 rounded-full border p-1.5 backdrop-blur transition", savedIds.includes(p.id) ? "border-signal-reject/40 bg-signal-reject/15 text-signal-reject" : "border-white/15 bg-base-950/50 text-white hover:border-astra-cyan/50 hover:text-astra-cyan"].join(" ")}><Heart className={savedIds.includes(p.id) ? "h-3.5 w-3.5 fill-current" : "h-3.5 w-3.5"} /></button>
               </div>
               <p className="truncate text-xs font-medium text-ink-100">{p.title}</p>
               <div className="mt-1 flex items-center justify-between">
@@ -76,8 +112,10 @@ export default function HybridResultsGrid({
                   {p.is_verified_seller ? "Verified" : ""}
                 </div>
               </div>
+              <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-ink-500"><span>{p.semantic_tags.includes("Fast delivery") ? "Fast delivery" : "Delivery options"}</span><span className="font-medium text-signal-good">{p.trust}% trust</span></div>
               <p className="mt-1 font-display text-sm font-semibold text-ink-100">{p.formatted_price}</p>
-              <p className="truncate text-[10px] text-ink-500">{p.seller_name}</p>
+              <p className="truncate text-[10px] text-ink-500">{p.seller_name} · {p.total_reviews.toLocaleString()} reviews</p>
+              <button type="button" onClick={(event) => { event.preventDefault(); toggleCompare(p.id); }} className={["mt-3 inline-flex items-center gap-1 text-[10px] font-medium transition", compareIds.includes(p.id) ? "text-astra-cyan" : "text-ink-500 hover:text-ink-100"].join(" ")}><Scale className="h-3 w-3" /> {compareIds.includes(p.id) ? "Added to compare" : "Compare"}</button>
             </Link>
           ))}
         </div>

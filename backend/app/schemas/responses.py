@@ -16,12 +16,12 @@ class ProductSchema(BaseModel):
     badge: str | None
     image_url: str
     semantic_tags: list[str]
+    trust: int = Field(ge=0, le=100)
 
 
 class ProductDetailSchema(ProductSchema):
     description: str
     fit: str
-    trust: int = Field(ge=0, le=100)
 
 
 class SearchResponse(BaseModel):

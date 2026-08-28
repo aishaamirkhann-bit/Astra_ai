@@ -17,10 +17,27 @@ async def process_voice_query(audio_file: UploadFile) -> str:
 
 
 async def extract_image_features(image_file: UploadFile) -> str:
-    """Placeholder for a vision encoder; production code should persist no raw upload."""
+    """Use local filename/category signals until a production vision encoder is connected."""
     if not image_file.content_type or not image_file.content_type.startswith("image/"):
         raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Unsupported image format")
+    filename = (image_file.filename or "").lower()
     await image_file.read()
+    if "samsung" in filename:
+        return "samsung smartphone"
+    if any(term in filename for term in ("headphone", "earbud")):
+        return "headphones audio"
+    if any(term in filename for term in ("phone", "mobile", "iphone")):
+        return "smartphone mobile"
+    if any(term in filename for term in ("laptop", "notebook")):
+        return "laptop computer"
+    if "watch" in filename:
+        return "smartwatch wearable"
+    if any(term in filename for term in ("jewelry", "earring")):
+        return "jewelry"
+    if "dress" in filename:
+        return "clothing fashion"
+    if "makeup" in filename:
+        return "makeup beauty"
     return "smartphone mobile"
 
 
@@ -66,7 +83,7 @@ def _keyword_score(query: str, product: dict[str, Any]) -> float:
 def _to_response_product(product: dict[str, Any]) -> dict[str, Any]:
     search_fields = {
         "id", "title", "category", "price", "rating", "total_reviews",
-        "seller_name", "is_verified_seller", "badge", "image_url", "semantic_tags",
+        "seller_name", "is_verified_seller", "badge", "image_url", "semantic_tags", "trust",
     }
     return {key: value for key, value in product.items() if key in search_fields} | {
         "formatted_price": f"Rs. {product['price']:,.0f}"

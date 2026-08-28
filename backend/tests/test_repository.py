@@ -12,7 +12,7 @@ def test_repository_seeds_and_reads_products(tmp_path: Path) -> None:
     assert len(products) == 7
     assert product is not None
     assert product["title"] == "Lenovo IdeaPad Slim 5"
-    assert product["semantic_tags"] == ["Fits your budget", "Verified seller"]
+    assert product["semantic_tags"] == ["Fits your budget", "Verified seller", "Fast delivery", "Eco-friendly"]
 
 
 def test_repository_keeps_existing_catalog_without_duplicate_seeds(tmp_path: Path) -> None:

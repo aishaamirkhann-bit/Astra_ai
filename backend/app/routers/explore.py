@@ -4,10 +4,39 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import ValidationError
 
 from app.schemas.explore import BudgetRecommendationResponse, ExploreSearchRequest, ProductDetailSchema, ProductSchema, SearchResponse, WalletResponse
+from app.schemas.categories import CategoryProductsResponse, CategorySchema
+from app.repository import product_repository
 from app.services.budget import get_available_balance, recommend_with_budget
 from app.services.explore import execute_search, get_product, list_products
 
 router = APIRouter(prefix="/api/v1/explore", tags=["Explore"])
+
+
+@router.get("/categories", response_model=list[CategorySchema])
+async def categories() -> list[CategorySchema]:
+    return product_repository.list_categories()
+
+
+@router.get("/categories/{category_slug}/products", response_model=CategoryProductsResponse)
+async def category_products(
+    category_slug: str,
+    min_price: float = 0,
+    max_price: float = 500000,
+    page: int = 1,
+    limit: int = 20,
+    sort_by: str = "most_relevant",
+    verified_only: bool = False,
+    min_rating: float = 0,
+) -> CategoryProductsResponse:
+    if min_price < 0 or max_price < min_price or min_rating < 0 or min_rating > 5 or page < 1 or not 1 <= limit <= 50:
+        raise HTTPException(status_code=422, detail="Invalid category product filters")
+    items, total = product_repository.list_category_products(category_slug, min_price, max_price, page, limit, sort_by, verified_only, min_rating)
+    return CategoryProductsResponse(
+        total_results=total,
+        current_page=page,
+        total_pages=(total + limit - 1) // limit,
+        items=items,
+    )
 
 
 @router.get("/wallet", response_model=WalletResponse)
