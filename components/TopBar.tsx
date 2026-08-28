@@ -26,7 +26,7 @@ type SpeechRecognitionLike = {
 
 type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 
-export default function TopBar() {
+export default function TopBar({ unreadNotifications = 0 }: { unreadNotifications?: number }) {
   const [lang, setLang] = useState<(typeof LANGUAGES)[number]>("Roman Urdu");
   const [listening, setListening] = useState(false);
   const [imageSelected, setImageSelected] = useState(false);
@@ -160,7 +160,7 @@ export default function TopBar() {
         <ThemeToggle />
         <button aria-label="Notifications" className="relative grid h-9 w-9 place-items-center rounded-full bg-base-800 text-ink-300 transition-colors hover:text-ink-100">
           <Bell className="h-4 w-4" />
-          <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-signal-reject" />
+          {unreadNotifications > 0 && <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-signal-reject" />}
         </button>
         <button className="flex items-center gap-2 rounded-full bg-base-800 py-1 pl-1 pr-2.5 text-ink-100 transition-colors hover:bg-base-700">
           <div className="grid h-7 w-7 place-items-center rounded-full bg-astra-gradient"><User className="h-3.5 w-3.5 text-white" /></div>

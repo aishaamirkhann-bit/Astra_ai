@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { Star, Heart, ShoppingCart, ShieldCheck } from "lucide-react";
-import { PRODUCTS } from "@/lib/mockData";
+import type { Product } from "@/lib/types";
 
-export default function ProductGrid() {
+export default function ProductGrid({ products }: { products: Product[] }) {
   return (
     <section>
       <div className="mb-4 flex items-center justify-between">
@@ -15,7 +15,7 @@ export default function ProductGrid() {
       </div>
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        {PRODUCTS.slice(0, 4).map((p) => (
+        {products.map((p) => (
           <Link
             key={p.slug}
             href={`/product/${p.slug}`}
@@ -50,7 +50,7 @@ export default function ProductGrid() {
                 {p.trust}
               </div>
             </div>
-            <p className="mt-1 font-display text-sm font-semibold text-ink-100">{p.price}</p>
+            <p className="mt-1 font-display text-sm font-semibold text-ink-100">{p.price_display}</p>
 
             <span
               className={[

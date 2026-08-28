@@ -32,7 +32,21 @@ export default function ExploreClient({
   const [searchContext, setSearchContext] = useState<{ mode: "voice" | "image"; label: string; previewUrl?: string } | null>(null);
 
   useEffect(() => {
-    void fetch(`${API_URL}/api/v1/explore/wallet`).then((response) => response.json()).then((payload) => setWalletBalance(payload.available_balance));
+    const loadWalletBalance = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/v1/explore/wallet`);
+        if (!response.ok) return;
+
+        const payload = (await response.json()) as { available_balance?: unknown };
+        if (typeof payload.available_balance === "number" && Number.isFinite(payload.available_balance)) {
+          setWalletBalance(payload.available_balance);
+        }
+      } catch {
+        // The explore catalog remains usable when the wallet service is unavailable.
+      }
+    };
+
+    void loadWalletBalance();
   }, []);
 
   const resetExplore = () => {
@@ -163,7 +177,7 @@ export default function ExploreClient({
   return (
     <>
       <SmartPrompt onSelect={(prompt) => { setBudgetMode(false); window.dispatchEvent(new CustomEvent("astra:search", { detail: { query: prompt, commit: true } })); }} onBudgetCheck={() => void checkBudget()} />
-      {walletBalance !== null && <p className="-mt-4 text-xs text-ink-500">Available Balance: <span className="font-semibold text-ink-100">Rs. {walletBalance.toLocaleString()}</span></p>}
+      {typeof walletBalance === "number" && <p className="-mt-4 text-xs text-ink-500">Available Balance: <span className="font-semibold text-ink-100">Rs. {walletBalance.toLocaleString()}</span></p>}
       {searchContext && <div className="glass flex items-center gap-3 rounded-xl2 p-3"><div className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-lg bg-base-800">{searchContext.mode === "image" && searchContext.previewUrl ? <img src={searchContext.previewUrl} alt="Selected search" className="h-full w-full object-cover" /> : <Mic className="h-5 w-5 text-astra-cyan" />}</div><div className="min-w-0 flex-1"><p className="flex items-center gap-1.5 text-xs font-semibold text-ink-100">{searchContext.mode === "image" ? <ImageIcon className="h-3.5 w-3.5 text-astra-cyan" /> : <Mic className="h-3.5 w-3.5 text-astra-cyan" />}{searchContext.mode === "image" ? "Image search" : "Voice search"}</p><p className="mt-0.5 truncate text-[11px] text-ink-500">{searchContext.label}</p></div><button type="button" onClick={() => setSearchContext(null)} aria-label="Dismiss search context" className="text-ink-500 transition hover:text-ink-100"><X className="h-4 w-4" /></button></div>}
 
       <div className="flex flex-wrap items-center justify-between gap-3">

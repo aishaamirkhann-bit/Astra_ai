@@ -1,7 +1,8 @@
-# Dependencies
+# Dependencies and virtual environments
 node_modules/
-backend/.venv/
 .venv/
+venv/
+env/
 
 # Next.js and build output
 .next/
@@ -13,190 +14,30 @@ build/
 .env
 .env.*
 !.env.example
-backend/.env
-backend/.env.*
-!backend/.env.example
 
-# Local databases and generated Python files
-.astra_ai.db
-*.db
+# Python caches and local databases
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.test-tmp/
+.backend-test-cache/
+*.db
+*.sqlite
+*.sqlite3
 .coverage
 htmlcov/
 
-# Logs and local tooling
+# Logs, editors, and OS files
 *.log
 .vscode/
 .idea/
-Thumbs.db
-ehthumbs.db
-# ==========================================
-# ASTRA AI - Git Ignore
-# ==========================================
-
-# ------------------------------
-# Node.js / Next.js
-# ------------------------------
-
-node_modules/
-.next/
-out/
-dist/
-build/
-
-# Next.js cache
-.next/cache/
-
-
-# ------------------------------
-# Environment Variables / Secrets
-# ------------------------------
-
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-.env.*
-
-# Allow example environment file
-!.env.example
-
-
-# ------------------------------
-# Python
-# ------------------------------
-
-__pycache__/
-*.py[cod]
-*.pyo
-*.pyd
-
-# Virtual environments
-venv/
-.venv/
-env/
-ENV/
-env.bak/
-venv.bak/
-
-
-# ------------------------------
-# Python Tools / Caches
-# ------------------------------
-
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-htmlcov/
-
-
-# ------------------------------
-# IDE / Editors
-# ------------------------------
-
-.vscode/
-.idea/
-
-# VS Code workspace files
-*.code-workspace
-
-
-# ------------------------------
-# Operating System
-# ------------------------------
-
 .DS_Store
 Thumbs.db
 desktop.ini
 
-
-# ------------------------------
-# Logs
-# ------------------------------
-
-*.log
-logs/
-
-
-# ------------------------------
-# Temporary Files
-# ------------------------------
-
+# Temporary files
 *.tmp
 *.temp
 *.swp
 *.swo
-
-
-# ------------------------------
-# Build / Cache
-# ------------------------------
-
-.cache/
-.parcel-cache/
-
-
-# ------------------------------
-# Database
-# ------------------------------
-
-*.sqlite
-*.sqlite3
-*.db
-
-
-# ------------------------------
-# Python Distribution
-# ------------------------------
-
-*.egg
-*.egg-info/
-dist/
-build/
-.eggs/
-
-
-# ------------------------------
-# Jupyter Notebook
-# ------------------------------
-
-.ipynb_checkpoints/
-
-
-# ------------------------------
-# Testing
-# ------------------------------
-
-.pytest_cache/
-.tox/
-.nox/
-
-
-# ------------------------------
-# OS / Editor Backup
-# ------------------------------
-
 *~
-*.bak
-
-@"
-node_modules/
-.next/
-out/
-dist/
-build/
-.env
-.env.local
-*.log
-"@ | Set-Content .gitignore
-
-
-node_modules/
-.next/
-.env
-.env.local
-*.log
