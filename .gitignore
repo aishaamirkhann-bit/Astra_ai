@@ -1,3 +1,37 @@
+# Dependencies
+node_modules/
+backend/.venv/
+.venv/
+
+# Next.js and build output
+.next/
+out/
+dist/
+build/
+
+# Environment files and secrets
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+
+# Local databases and generated Python files
+.astra_ai.db
+*.db
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs and local tooling
+*.log
+.vscode/
+.idea/
+Thumbs.db
+ehthumbs.db
 # ==========================================
 # ASTRA AI - Git Ignore
 # ==========================================
