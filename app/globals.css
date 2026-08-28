@@ -1,0 +1,126 @@
+/* Space Grotesk (display, technical/geometric) + Inter (body) + JetBrains Mono (data/timers/logs) */
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-display: "Space Grotesk", sans-serif;
+  --font-body: "Inter", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  /* ── LIGHT THEME (default) ─────────────────────────────────────── */
+  --base-950: 247 248 252; /* page background */
+  --base-900: 255 255 255; /* deepest card layer / pure white */
+  --base-800: 243 245 251; /* card surface */
+  --base-700: 234 237 248; /* secondary surface */
+  --base-600: 221 226 244; /* borders / dividers */
+  --base-500: 199 207 235; /* muted borders on hover */
+
+  --ink-100: 20 26 48;     /* primary text */
+  --ink-300: 71 81 112;    /* secondary text */
+  --ink-500: 116 126 156;  /* muted / captions */
+  --ink-700: 163 171 196;  /* disabled */
+
+  --astra-cyan: 12 122 156;    /* deep teal — legible on white */
+  --signal-good: 21 138 94;
+  --signal-hold: 176 118 8;
+  --signal-reject: 200 55 61;
+
+  --astra-glow: radial-gradient(120% 120% at 0% 0%, rgba(91,110,245,0.10) 0%, rgba(247,248,252,0) 55%),
+                radial-gradient(100% 100% at 100% 0%, rgba(23,152,193,0.08) 0%, rgba(247,248,252,0) 50%);
+
+  --glass-bg-1: rgba(255, 255, 255, 0.82);
+  --glass-bg-2: rgba(247, 248, 252, 0.86);
+  --glass-border: rgba(20, 30, 65, 0.08);
+  --card-shadow: 0 1px 0 0 rgba(255,255,255,0.6) inset, 0 12px 30px -18px rgba(30,40,80,0.18);
+
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --base-950: 10 15 28;
+  --base-900: 15 22 38;
+  --base-800: 20 28 46;
+  --base-700: 27 39 53;
+  --base-600: 38 51 74;
+  --base-500: 58 74 102;
+
+  --ink-100: 238 241 248;
+  --ink-300: 183 192 212;
+  --ink-500: 124 136 163;
+  --ink-700: 78 90 115;
+
+  --astra-cyan: 79 209 255;
+  --signal-good: 52 211 153;
+  --signal-hold: 251 191 36;
+  --signal-reject: 247 107 107;
+
+  --astra-glow: radial-gradient(120% 120% at 0% 0%, rgba(91,110,245,0.16) 0%, rgba(10,15,28,0) 55%),
+                radial-gradient(100% 100% at 100% 0%, rgba(79,209,255,0.08) 0%, rgba(10,15,28,0) 50%);
+
+  --glass-bg-1: rgba(27, 39, 53, 0.72);
+  --glass-bg-2: rgba(15, 22, 38, 0.72);
+  --glass-border: rgba(255, 255, 255, 0.06);
+  --card-shadow: 0 1px 0 0 rgba(255,255,255,0.04) inset, 0 12px 30px -14px rgba(0,0,0,0.6);
+
+  color-scheme: dark;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: rgb(var(--base-950));
+  color: rgb(var(--ink-100));
+  font-family: var(--font-body);
+  overflow-x: hidden;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Visible keyboard focus everywhere — glow ring, not the default outline */
+:focus-visible {
+  outline: 2px solid #5b6ef5;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Glass card — the base surface used across every widget, theme-aware */
+.glass {
+  background: linear-gradient(180deg, var(--glass-bg-1) 0%, var(--glass-bg-2) 100%);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--card-shadow);
+}
+
+.glass-hover {
+  transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+.glass-hover:hover {
+  border-color: rgba(91, 110, 245, 0.4);
+  box-shadow: 0 0 0 1px rgba(91, 110, 245, 0.25), 0 12px 30px -14px rgba(91, 110, 245, 0.5);
+}
+
+/* Thin scrollbar for dense panels (audit logs, pipeline detail) */
+.scroll-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+.scroll-thin::-webkit-scrollbar-thumb { background: rgb(var(--base-600)); border-radius: 999px; }
+.scroll-thin::-webkit-scrollbar-track { background: transparent; }
+
+/* Product / category photo frame — consistent crop + subtle tint across themes */
+.photo-frame {
+  background-color: rgb(var(--base-700));
+  background-size: cover;
+  background-position: center;
+}
