@@ -1,8 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
 
-from fastapi.testclient import TestClient
-
-from app.main import app
 from app.core.database import SessionLocal
 from app.models.cart import CartItem
 from app.models.deal import Deal, DealReservation
@@ -11,11 +8,9 @@ from app.models.product import Product
 from app.models.user import User
 from app.models.wallet import FinancialConsentLog, WalletTransaction
 
-client = TestClient(app)
 
-
-def test_deals_match_frontend_card_contract() -> None:
-    response = client.get("/api/v1/deals")
+def test_deals_match_frontend_card_contract(auth_client) -> None:
+    response = auth_client.get("/api/v1/deals")
 
     assert response.status_code == 200
     payload = response.json()
@@ -41,8 +36,8 @@ def test_deals_match_frontend_card_contract() -> None:
     assert all(deal["price"] < deal["market_price"] for deal in deals)
 
 
-def test_deals_can_filter_category_and_sort_by_trust() -> None:
-    response = client.get("/api/v1/deals", params={"category": "Tech", "sort_by": "top_trust"})
+def test_deals_can_filter_category_and_sort_by_trust(auth_client) -> None:
+    response = auth_client.get("/api/v1/deals", params={"category": "Tech", "sort_by": "top_trust"})
 
     assert response.status_code == 200
     deals = response.json()["items"]
@@ -51,31 +46,31 @@ def test_deals_can_filter_category_and_sort_by_trust() -> None:
     assert scores == sorted(scores, reverse=True)
 
 
-def test_deal_details_include_history_and_variants() -> None:
-    deal_id = client.get("/api/v1/deals", params={"page_size": 1}).json()["items"][0]["id"]
-    response = client.get(f"/api/v1/deals/{deal_id}/details")
+def test_deal_details_include_history_and_variants(auth_client) -> None:
+    deal_id = auth_client.get("/api/v1/deals", params={"page_size": 1}).json()["items"][0]["id"]
+    response = auth_client.get(f"/api/v1/deals/{deal_id}/details")
 
     assert response.status_code == 200
     assert response.json()["price_history"]
     assert response.json()["sizes"]
 
 
-def test_reservation_rejects_quantity_above_inventory() -> None:
-    deals = client.get("/api/v1/deals", params={"page_size": 100}).json()["items"]
+def test_reservation_rejects_quantity_above_inventory(auth_client) -> None:
+    deals = auth_client.get("/api/v1/deals", params={"page_size": 100}).json()["items"]
     deal = next(item for item in deals if item["stock_remaining"] < 10)
-    response = client.post(f"/api/v1/deals/{deal['id']}/reserve", json={"quantity": 10})
+    response = auth_client.post(f"/api/v1/deals/{deal['id']}/reserve", json={"quantity": 10})
 
     assert response.status_code == 409
 
 
-def test_cart_is_persisted_for_current_user() -> None:
-    deal = client.get("/api/v1/deals", params={"page_size": 1}).json()["items"][0]
-    response = client.post("/api/v1/ai-assistant/add-to-cart", json={
+def test_cart_is_persisted_for_current_user(auth_client) -> None:
+    deal = auth_client.get("/api/v1/deals", params={"page_size": 1}).json()["items"][0]
+    response = auth_client.post("/api/v1/ai-assistant/add-to-cart", json={
         "product_slug": deal["slug"], "quantity": 2, "size": "Standard", "color": "Graphite",
     })
     assert response.status_code == 200
     assert response.json()["cart_total_quantity"] >= 2
-    cart = client.get("/api/v1/ai-assistant/cart")
+    cart = auth_client.get("/api/v1/ai-assistant/cart")
     assert cart.status_code == 200
     assert any(item["product_slug"] == deal["slug"] for item in cart.json()["items"])
 
@@ -88,18 +83,18 @@ def test_cart_is_persisted_for_current_user() -> None:
         db.commit()
 
 
-def test_deal_reservation_creates_approval_order_and_cancel_releases_stock() -> None:
-    deal = client.get("/api/v1/deals", params={"page_size": 100}).json()["items"]
+def test_deal_reservation_creates_approval_order_and_cancel_releases_stock(auth_client) -> None:
+    deal = auth_client.get("/api/v1/deals", params={"page_size": 100}).json()["items"]
     deal = next(item for item in deal if item["stock_remaining"] >= 1)
     before = deal["stock_remaining"]
-    reserved = client.post(f"/api/v1/deals/{deal['id']}/reserve", json={"quantity": 1})
+    reserved = auth_client.post(f"/api/v1/deals/{deal['id']}/reserve", json={"quantity": 1})
     assert reserved.status_code == 200
     payload = reserved.json()
     assert payload["order_ref"].startswith("ORD-")
 
-    cancelled = client.post("/api/v1/approval/cancel", json={"order_ref": payload["order_ref"]})
+    cancelled = auth_client.post("/api/v1/approval/cancel", json={"order_ref": payload["order_ref"]})
     assert cancelled.status_code == 200
-    refreshed = client.get(f"/api/v1/deals/{deal['id']}/details").json()
+    refreshed = auth_client.get(f"/api/v1/deals/{deal['id']}/details").json()
     assert refreshed["stock_remaining"] == before
 
     with SessionLocal() as db:
@@ -110,8 +105,8 @@ def test_deal_reservation_creates_approval_order_and_cancel_releases_stock() -> 
         db.commit()
 
 
-def test_concurrent_reservations_cannot_oversell() -> None:
-    deal = client.get("/api/v1/deals", params={"page_size": 1}).json()["items"][0]
+def test_concurrent_reservations_cannot_oversell(auth_client) -> None:
+    deal = auth_client.get("/api/v1/deals", params={"page_size": 1}).json()["items"][0]
     with SessionLocal() as db:
         deal_row = db.query(Deal).filter(Deal.id == deal["id"]).first()
         product = db.query(Product).filter(Product.id == deal_row.product_id).first()
@@ -121,7 +116,7 @@ def test_concurrent_reservations_cannot_oversell() -> None:
         db.commit()
 
     def reserve_once():
-        return client.post(f"/api/v1/deals/{deal['id']}/reserve", json={"quantity": 1})
+        return auth_client.post(f"/api/v1/deals/{deal['id']}/reserve", json={"quantity": 1})
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         responses = list(pool.map(lambda _: reserve_once(), range(2)))
@@ -130,7 +125,7 @@ def test_concurrent_reservations_cannot_oversell() -> None:
     assert statuses[1] in {404, 409, 423}
 
     successful = next(response.json() for response in responses if response.status_code == 200)
-    client.post("/api/v1/approval/cancel", json={"order_ref": successful["order_ref"]})
+    auth_client.post("/api/v1/approval/cancel", json={"order_ref": successful["order_ref"]})
     with SessionLocal() as db:
         order = db.query(Order).filter(Order.order_ref == successful["order_ref"]).first()
         reservation_id = order.reservation_id
@@ -143,32 +138,32 @@ def test_concurrent_reservations_cannot_oversell() -> None:
         db.commit()
 
 
-def test_approved_deal_is_listed_and_can_be_reversed() -> None:
-    deal = client.get("/api/v1/deals", params={"page_size": 100}).json()["items"]
-    balance = client.get("/api/v1/wallet").json()["available_balance"]
+def test_approved_deal_is_listed_and_can_be_reversed(auth_client) -> None:
+    deal = auth_client.get("/api/v1/deals", params={"page_size": 100}).json()["items"]
+    balance = auth_client.get("/api/v1/wallet").json()["available_balance"]
     deal = next(item for item in deal if item["stock_remaining"] >= 1 and item["price"] <= balance)
     before = deal["stock_remaining"]
-    reserved = client.post(f"/api/v1/deals/{deal['id']}/reserve", json={"quantity": 1}).json()
+    reserved = auth_client.post(f"/api/v1/deals/{deal['id']}/reserve", json={"quantity": 1}).json()
     with SessionLocal() as db:
         order = db.query(Order).filter(Order.order_ref == reserved["order_ref"]).first()
         amount = order.price
-    blocked = client.post("/api/v1/approval/approve", json={"order_ref": reserved["order_ref"]})
+    blocked = auth_client.post("/api/v1/approval/approve", json={"order_ref": reserved["order_ref"]})
     if blocked.status_code == 428:
-        consent = client.post("/api/v1/wallet/authorize-consent", json={
+        consent = auth_client.post("/api/v1/wallet/authorize-consent", json={
             "amount": amount, "auth_method": "Voice", "order_ref": reserved["order_ref"],
             "voice_transcript": f"I authorize payment of Rs. {int(amount)}",
         }).json()
-        approved = client.post("/api/v1/approval/approve", json={"order_ref": reserved["order_ref"], "consent_id": consent["consent_id"]})
+        approved = auth_client.post("/api/v1/approval/approve", json={"order_ref": reserved["order_ref"], "consent_id": consent["consent_id"]})
     else:
         approved = blocked
     assert approved.status_code == 200
-    orders = client.get("/api/v1/orders")
+    orders = auth_client.get("/api/v1/orders")
     assert orders.status_code == 200
     assert any(order["order_ref"] == reserved["order_ref"] and order["status"] == "reversal_window_open" for order in orders.json())
 
-    reversed_order = client.post(f"/api/v1/orders/{reserved['order_ref']}/reverse")
+    reversed_order = auth_client.post(f"/api/v1/orders/{reserved['order_ref']}/reverse")
     assert reversed_order.status_code == 200
-    assert client.get(f"/api/v1/deals/{deal['id']}/details").json()["stock_remaining"] == before
+    assert auth_client.get(f"/api/v1/deals/{deal['id']}/details").json()["stock_remaining"] == before
 
     with SessionLocal() as db:
         order = db.query(Order).filter(Order.order_ref == reserved["order_ref"]).first()

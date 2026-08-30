@@ -2,7 +2,7 @@
 
 import { SlidersHorizontal } from "lucide-react";
 
-const SEMANTIC_TAGS = [
+const DEFAULT_SEMANTIC_TAGS = [
   "Verified seller",
   "Bestseller",
   "Fast delivery",
@@ -17,6 +17,7 @@ export default function SemanticFilters({
   onMaxPriceChange,
   activeTags,
   onTagsChange,
+  tags,
 }: {
   minPrice: number;
   onMinPriceChange: (v: number) => void;
@@ -24,9 +25,12 @@ export default function SemanticFilters({
   onMaxPriceChange: (v: number) => void;
   activeTags: string[];
   onTagsChange: (tags: string[]) => void;
+  tags?: string[];
 }) {
   const toggle = (tag: string) =>
     onTagsChange(activeTags.includes(tag) ? activeTags.filter((t) => t !== tag) : [...activeTags, tag]);
+
+  const chipList = tags && tags.length > 0 ? tags : DEFAULT_SEMANTIC_TAGS;
 
   return (
     <aside className="glass h-fit rounded-xl2 p-5">
@@ -38,7 +42,7 @@ export default function SemanticFilters({
       <div className="mb-6">
         <p className="mb-2 text-xs font-medium text-ink-300">Semantic tags</p>
         <div className="flex flex-wrap gap-2">
-          {SEMANTIC_TAGS.map((tag) => {
+          {chipList.map((tag) => {
             const on = activeTags.includes(tag);
             return (
               <button

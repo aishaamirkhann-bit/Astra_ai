@@ -16,6 +16,7 @@ from app.api.v1.endpoints import (
     orders,
     cart,
     chat,
+    b2b,
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -35,3 +36,4 @@ api_router.include_router(deals.router)
 api_router.include_router(orders.router)
 api_router.include_router(cart.router)
 api_router.include_router(chat.router)
+api_router.include_router(b2b.router)

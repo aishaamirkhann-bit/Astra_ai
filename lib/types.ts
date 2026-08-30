@@ -385,3 +385,27 @@ export interface OtpRequiredResponse {
   expires_in_minutes: number;
   message: string;
 }
+
+/** One row of the immutable orders/consent audit trail. */
+export interface AuditEntry {
+  id: string;
+  type: string;
+  endpoint: string;
+  actor: string;
+  verdict: string;
+  time: string | null;
+}
+
+export interface B2bConsentCheck {
+  rule: string;
+  status: string;
+  detail: string;
+}
+
+export interface B2bEvaluation {
+  verdict: "approve" | "hold" | "reject";
+  reason: string;
+  event_ref: string;
+  evaluated_at: string;
+  checks: B2bConsentCheck[];
+}

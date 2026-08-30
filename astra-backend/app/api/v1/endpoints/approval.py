@@ -15,6 +15,7 @@ from app.realtime.wallet_ws import manager as wallet_events
 from app.realtime.notifications_ws import manager as notification_events
 from app.models.notification import Notification
 from app.schemas.approval import ApprovalActionRequest, ApprovalActionResponse, ApprovalStatusOut
+from app.services.audit import record_audit
 from app.utils.helpers import as_aware_utc
 
 router = APIRouter(prefix="/approval", tags=["Human Approval"])
@@ -92,6 +93,13 @@ async def approve_transaction(
         reservation = db.query(DealReservation).filter(DealReservation.id == order.reservation_id).first()
         if reservation and reservation.status == "reserved":
             reservation.status = "committed"
+    record_audit(
+        db,
+        event_type="human.approval",
+        endpoint=f"/api/v1/approval/approve?order_ref={order.order_ref}",
+        verdict="approved",
+        actor=f"user:{current_user.email}",
+    )
     db.commit()
     await wallet_events.balance_updated(current_user.id, wallet.available_balance, "Debit")
     db.add(Notification(user_id=current_user.id, message=f"{order.order_ref} approved. Your order is being prepared.")); db.commit()
@@ -110,6 +118,13 @@ def cancel_transaction(
     order = _get_owned_pending_order(db, current_user, payload.order_ref)
     _release_order_reservation(db, order, "order_cancelled")
     order.status = OrderStatus.CANCELLED
+    record_audit(
+        db,
+        event_type="human.cancellation",
+        endpoint=f"/api/v1/approval/cancel?order_ref={order.order_ref}",
+        verdict="cancelled",
+        actor=f"user:{current_user.email}",
+    )
     db.commit()
     return ApprovalActionResponse(
         order_ref=order.order_ref, status="cancelled", message="Order cancelled — refund started"
