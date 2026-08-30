@@ -132,7 +132,8 @@ def seed():
         # --- Products (skip any that already exist, since Explore backend owns this table too) ---
         for p in PRODUCTS_SEED:
             if not db.query(Product).filter(Product.id == p["id"]).first():
-                db.add(Product(**p))
+                seller_id = p["seller_name"].lower().replace(" ", "-").replace("&", "and")
+                db.add(Product(**p, seller_id=seller_id))
         db.flush()
 
         # --- A pending order, so HumanApprovalWidget + PipelineBar have something to show ---

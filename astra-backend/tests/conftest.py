@@ -2,6 +2,9 @@
 Shared pytest fixtures. Protected endpoints now enforce strict JWT auth
 (no demo-user fallback), so tests authenticate with a real token for the
 seeded user. Run `python -m app.db.seed` before the suite.
+
+The clients are context-managed so the app lifespan (deals bootstrap,
+background monitors) runs even on a fresh database.
 """
 import pytest
 from fastapi.testclient import TestClient
@@ -29,10 +32,12 @@ def auth_token(demo_user_id: int) -> str:
 
 
 @pytest.fixture(scope="session")
-def auth_client(auth_token: str) -> TestClient:
-    return TestClient(app, headers={"Authorization": f"Bearer {auth_token}"})
+def auth_client(auth_token: str):
+    with TestClient(app, headers={"Authorization": f"Bearer {auth_token}"}) as client:
+        yield client
 
 
 @pytest.fixture(scope="session")
-def anonymous_client() -> TestClient:
-    return TestClient(app)
+def anonymous_client():
+    with TestClient(app) as client:
+        yield client
