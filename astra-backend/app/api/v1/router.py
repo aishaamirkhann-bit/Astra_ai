@@ -13,6 +13,9 @@ from app.api.v1.endpoints import (
     notifications,
     explore,
     deals,
+    orders,
+    cart,
+    chat,
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -29,3 +32,6 @@ api_router.include_router(wallet.router)
 api_router.include_router(notifications.router)
 api_router.include_router(explore.router)
 api_router.include_router(deals.router)
+api_router.include_router(orders.router)
+api_router.include_router(cart.router)
+api_router.include_router(chat.router)

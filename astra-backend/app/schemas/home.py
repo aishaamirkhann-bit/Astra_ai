@@ -6,6 +6,7 @@ from app.schemas.ai_assistant import AiAssistantSuggestion
 from app.schemas.approval import ApprovalStatusOut
 from app.schemas.pipeline import PipelineStateOut
 from app.schemas.goal import GoalsWalletRailOut
+from app.schemas.user import UserOut
 
 
 class HeroSuggestion(BaseModel):
@@ -22,9 +23,10 @@ class HomePageOut(BaseModel):
     """
     hero_suggestions: list[HeroSuggestion]
     recommended_products: list[ProductOut]
-    astra_check: AstraCheckOut
-    ai_assistant: AiAssistantSuggestion
+    astra_check: AstraCheckOut | None
+    ai_assistant: AiAssistantSuggestion | None
     approval: ApprovalStatusOut | None
     pipeline: PipelineStateOut
     goals_wallet: GoalsWalletRailOut
     unread_notifications: int
+    user: UserOut

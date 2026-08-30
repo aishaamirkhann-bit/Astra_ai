@@ -13,9 +13,42 @@ from app.schemas.goal import (
     GoalUpdate,
     WalletOut,
 )
+from app.models.budget import UserBudget
+from app.schemas.budget import BudgetDashboardOut, BudgetOut, BudgetUpdate, MatchedDealOut, ShoppingGoalCreate, ShoppingGoalOut, ShoppingGoalUpdate
+from app.services.budget_agent import budget_dashboard, create_shopping_goal, evaluate_user_matches, update_shopping_goal
 from app.utils.helpers import format_pkr
 
 router = APIRouter(prefix="/goals", tags=["Goals & Wallet"])
+
+
+@router.get("/budget", response_model=BudgetDashboardOut)
+def get_budget_agent_dashboard(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return budget_dashboard(db, current_user)
+
+
+@router.put("/budget", response_model=BudgetDashboardOut)
+def update_budget(payload: BudgetUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    budget_dashboard(db, current_user)
+    budget = db.get(UserBudget, current_user.id)
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(budget, field, value)
+    db.commit()
+    return budget_dashboard(db, current_user)
+
+
+@router.post("/create", response_model=ShoppingGoalOut, status_code=status.HTTP_201_CREATED)
+def create_budget_goal(payload: ShoppingGoalCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return create_shopping_goal(db, current_user, payload)
+
+
+@router.put("/{goal_id}/update", response_model=ShoppingGoalOut)
+def update_budget_goal(goal_id: int, payload: ShoppingGoalUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return update_shopping_goal(db, current_user, goal_id, payload)
+
+
+@router.get("/matched-deals", response_model=list[MatchedDealOut])
+def get_matched_deals(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return evaluate_user_matches(db, current_user)
 
 
 def _get_owned_goal(db: Session, goal_id: int, user: User) -> Goal:
@@ -106,9 +139,9 @@ def delete_goal(
         wallet.available_balance += goal.allocated_amount
         db.add(WalletLedgerEntry(
             wallet_id=wallet.id,
-            label=f'Goal deleted — refund from "{goal.name}"',
+            description=f'Goal deleted - refund from "{goal.name}"',
             amount=goal.allocated_amount,
-            entry_type="credit",
+            txn_type="Refund",
         ))
 
     db.delete(goal)
@@ -138,9 +171,9 @@ def allocate_to_goal(
 
     db.add(WalletLedgerEntry(
         wallet_id=wallet.id,
-        label=f'Contribution — {goal.name}',
-        amount=-payload.amount,
-        entry_type="debit",
+        description=f'Contribution - {goal.name}',
+        amount=payload.amount,
+        txn_type="Debit",
     ))
 
     db.commit()

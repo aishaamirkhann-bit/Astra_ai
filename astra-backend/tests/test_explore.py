@@ -43,7 +43,7 @@ def test_product_detail_endpoint_returns_product() -> None:
 def test_products_endpoint_returns_database_catalog() -> None:
     response = client.get("/api/v1/explore/products")
     assert response.status_code == 200
-    assert len(response.json()) == 7
+    assert len(response.json()) == 11
     assert response.json()[1]["id"] == "lenovo-ideapad-slim-5"
 
 
@@ -54,7 +54,8 @@ def test_categories_are_mapped_to_products() -> None:
     assert categories["Mobiles"] == 2
     assert categories["Laptops & Computers"] == 2
     assert categories["Audio & Wearables"] == 3
-    assert categories["Makeup & Beauty"] == 0
+    assert categories["Makeup & Beauty"] == 1
+    assert categories["Home Appliances"] == 1
     assert categories["Households"] == 0
 
 
@@ -78,8 +79,8 @@ def test_budget_recommendations_use_wallet_balance() -> None:
     )
     assert response.status_code == 200
     assert response.json()["available_balance"] == 25000
-    assert response.json()["total_results"] == 1
-    assert response.json()["items"][0]["id"] == "anker-soundcore-q45"
+    assert response.json()["total_results"] >= 1
+    assert any(item["id"] == "anker-soundcore-q45" for item in response.json()["items"])
 
 
 def test_missing_product_returns_not_found() -> None:

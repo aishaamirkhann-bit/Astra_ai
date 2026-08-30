@@ -20,6 +20,8 @@ from app.schemas.product import ProductOut
 from app.core.config import settings
 from app.utils.helpers import format_pkr, as_aware_utc
 from app.models.goal import Goal
+from app.models.budget import BudgetAlert
+from app.schemas.user import UserOut
 
 router = APIRouter(prefix="/home", tags=["Home"])
 
@@ -59,14 +61,14 @@ def get_home_page(
 
     # --- Best match (AI Assistant + ASTRA Check both use this) ---
     best = RecommendationEngine.best_match(db, wallet)
-    astra_check = ConsentOrchestrator.run_astra_check(best, wallet)
-    trust_verdict, _ = TrustEngine.seller_trust_check(best)
+    astra_check = ConsentOrchestrator.run_astra_check(best, wallet) if best else None
+    trust_verdict, _ = TrustEngine.seller_trust_check(best) if best else ("Warning", "No catalog")
     ai_assistant = AiAssistantSuggestion(
         message="Yeh product aapke liye best match hai:",
         product=_product_out(best, wallet),
         fits_budget=FinanceEngine.classify_fit(best.price, wallet) == "Fits your budget",
         verified_seller=trust_verdict == "Good",
-    )
+    ) if best else None
 
     # --- Pending approval + pipeline (both keyed off the same active order) ---
     active_order = (
@@ -88,6 +90,7 @@ def get_home_page(
             status="pending",
             seconds_left=remaining,
             window_seconds=settings.APPROVAL_WINDOW_SECONDS,
+            amount=active_order.price,
         )
     pipeline_state = PipelineEngine.build_state(active_order)
 
@@ -106,13 +109,14 @@ def get_home_page(
         db.query(Notification)
         .filter(Notification.user_id == current_user.id, Notification.is_read.is_(False))
         .count()
+        + db.query(BudgetAlert).filter(BudgetAlert.user_id == current_user.id, BudgetAlert.is_read.is_(False)).count()
     )
 
     return HomePageOut(
         hero_suggestions=[
             HeroSuggestion(label="Laptop 150k ke under", href="/explore?q=laptop+150k+ke+under"),
             HeroSuggestion(label="Best phone under 100k", href="/explore?q=best+phone+under+100k"),
-            HeroSuggestion(label="Mera budget check karo", href="/goals"),
+            HeroSuggestion(label="Mera budget check karo", href="/my-goals"),
         ],
         recommended_products=recommended_out,
         astra_check=astra_check,
@@ -121,4 +125,5 @@ def get_home_page(
         pipeline=pipeline_state,
         goals_wallet=goals_wallet,
         unread_notifications=unread,
+        user=UserOut.model_validate(current_user),
     )

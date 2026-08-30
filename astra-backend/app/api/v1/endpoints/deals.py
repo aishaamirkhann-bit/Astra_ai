@@ -4,7 +4,8 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db
+from app.api.deps import get_current_user, get_db
+from app.models.user import User
 from app.schemas.deal import DealDetail, DealListResponse, DealReservationResponse, ReserveDealRequest
 from app.services.deal_events import DealLockTimeout, deal_event_bus
 from app.services.deals_pipeline import get_deal_details, list_active_deals, reserve_deal
@@ -29,10 +30,14 @@ def get_deal_details_endpoint(deal_id: str, db: Session = Depends(get_db)) -> De
 
 
 @router.post("/{deal_id}/reserve", response_model=DealReservationResponse)
-async def reserve_deal_endpoint(deal_id: str, payload: ReserveDealRequest) -> DealReservationResponse:
+async def reserve_deal_endpoint(
+    deal_id: str,
+    payload: ReserveDealRequest,
+    current_user: User = Depends(get_current_user),
+) -> DealReservationResponse:
     try:
         async with deal_event_bus.reservation_lock(deal_id):
-            reservation, event = await asyncio.to_thread(reserve_deal, deal_id, payload)
+            reservation, event = await asyncio.to_thread(reserve_deal, deal_id, payload, current_user.id)
     except DealLockTimeout as error:
         raise HTTPException(status_code=status.HTTP_423_LOCKED, detail=str(error)) from error
     await deal_event_bus.publish(event.as_dict())

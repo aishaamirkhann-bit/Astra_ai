@@ -13,7 +13,7 @@ it cannot be used to call any protected endpoint.
 """
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -63,8 +63,19 @@ def _issue_otp(db: Session, user: User) -> OtpRequiredResponse:
     )
 
 
+def _clear_auth_cookie(response: Response) -> None:
+    response.delete_cookie(
+        settings.AUTH_COOKIE_NAME,
+        path="/",
+        secure=settings.APP_ENV == "production",
+        samesite=settings.AUTH_COOKIE_SAMESITE,
+        domain=settings.AUTH_COOKIE_DOMAIN,
+    )
+
+
 @router.post("/register", response_model=OtpRequiredResponse, status_code=status.HTTP_201_CREATED)
-def register(payload: RegisterRequest, db: Session = Depends(get_db)):
+def register(payload: RegisterRequest, response: Response, db: Session = Depends(get_db)):
+    _clear_auth_cookie(response)
     existing = db.query(User).filter(User.email == payload.email).first()
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
@@ -89,7 +100,8 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=OtpRequiredResponse)
-def login(payload: LoginRequest, db: Session = Depends(get_db)):
+def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)):
+    _clear_auth_cookie(response)
     user = db.query(User).filter(User.email == payload.email).first()
     if not user or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
@@ -100,7 +112,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/verify-otp", response_model=TokenResponse)
-def verify_otp_code(payload: VerifyOtpRequest, db: Session = Depends(get_db)):
+def verify_otp_code(payload: VerifyOtpRequest, response: Response, db: Session = Depends(get_db)):
     token_data = decode_otp_token(payload.otp_token)
     if token_data is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="OTP session expired — please log in again")
@@ -128,6 +140,12 @@ def verify_otp_code(payload: VerifyOtpRequest, db: Session = Depends(get_db)):
     db.refresh(user)
 
     access_token = create_access_token(subject=str(user.id), extra_claims={"role": user.role})
+    response.set_cookie(
+        key=settings.AUTH_COOKIE_NAME, value=access_token, httponly=True,
+        secure=settings.APP_ENV == "production", samesite=settings.AUTH_COOKIE_SAMESITE,
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60, path="/",
+        domain=settings.AUTH_COOKIE_DOMAIN,
+    )
     return TokenResponse(access_token=access_token, user=UserOut.model_validate(user))
 
 
@@ -147,3 +165,9 @@ def resend_otp(payload: ResendOtpRequest, db: Session = Depends(get_db)):
 @router.get("/me", response_model=UserOut)
 def me(current_user: User = Depends(get_current_user)):
     return current_user
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(response: Response):
+    _clear_auth_cookie(response)
+    return response

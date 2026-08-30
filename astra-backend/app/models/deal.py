@@ -63,10 +63,13 @@ class DealReservation(Base):
 
     id = Column(Text, primary_key=True, default=_uuid)
     deal_id = Column(Text, ForeignKey("deals.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     quantity = Column(Integer, nullable=False)
     status = Column(Text, nullable=False, default="reserved")
     reserved_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     expires_at = Column(DateTime(timezone=True), nullable=False)
+    size = Column(Text, nullable=False, default="")
+    color = Column(Text, nullable=False, default="")
 
     __table_args__ = (UniqueConstraint("id", "deal_id", name="uq_deal_reservation_id_deal"),)
 

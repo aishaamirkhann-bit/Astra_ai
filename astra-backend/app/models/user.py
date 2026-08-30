@@ -8,7 +8,7 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(80), nullable=False)              # e.g. "Aisha" (shown in TopBar)
+    name = Column(String(80), nullable=False)              # Authenticated display name shown in TopBar
     email = Column(String(120), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
     preferred_language = Column(String(20), default="Roman Urdu")  # English / اردو / Roman Urdu
@@ -26,7 +26,7 @@ class User(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    wallet = relationship("Wallet", back_populates="owner", uselist=False)
+    wallet = relationship("UserWallet", back_populates="owner", uselist=False)
     goals = relationship("Goal", back_populates="owner")
     orders = relationship("Order", back_populates="owner")
     notifications = relationship("Notification", back_populates="owner")

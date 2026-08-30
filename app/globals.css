@@ -158,3 +158,8 @@ body {
   pointer-events: auto;
 }
 .dual-range-max::-moz-range-thumb { background: #9867ef; }
+@media print {
+  body * { visibility: hidden !important; }
+  .receipt-panel, .receipt-panel * { visibility: visible !important; }
+  .receipt-panel { position: absolute !important; inset: 0 !important; width: 100% !important; max-width: none !important; background: white !important; color: black !important; }
+}

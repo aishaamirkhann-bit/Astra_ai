@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ShieldCheck, Mail, Lock, Loader2, ArrowRight } from "lucide-react";
 import { loginUser } from "@/lib/api";
-import { storePendingOtp } from "@/lib/auth";
+import { storePendingOtp, storePostAuthRedirect } from "@/lib/auth";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -21,6 +21,7 @@ export default function LoginPage() {
     try {
       const otpChallenge = await loginUser({ email, password });
       storePendingOtp(otpChallenge);
+      storePostAuthRedirect(new URLSearchParams(window.location.search).get("next") ?? "/");
       router.push("/verify-otp");
     } catch {
       setError("Invalid email or password. Try again.");
@@ -59,7 +60,7 @@ export default function LoginPage() {
                   autoComplete="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="aisha@astra.ai"
+                  placeholder="you@example.com"
                   className="w-full bg-transparent text-sm text-ink-100 placeholder:text-ink-500 focus:outline-none"
                 />
               </div>

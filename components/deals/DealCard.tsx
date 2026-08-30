@@ -20,10 +20,12 @@ export default function DealCard({
   deal,
   onOpen,
   onQuickAdd,
+  quickAdding,
 }: {
   deal: DealOut;
   onOpen: (deal: DealOut) => void;
   onQuickAdd: (deal: DealOut) => void;
+  quickAdding: boolean;
 }) {
   return (
     <motion.article
@@ -88,9 +90,10 @@ export default function DealCard({
         <button
           type="button"
           onClick={() => onQuickAdd(deal)}
+          disabled={quickAdding || deal.stock_remaining < 1}
           className="flex w-full items-center justify-center gap-2 rounded-xl bg-astra-gradient px-4 py-2.5 text-xs font-semibold text-white shadow-glow transition hover:brightness-110 active:scale-[0.98]"
         >
-          <ShoppingCart className="h-4 w-4" /> Quick add to cart
+          <ShoppingCart className="h-4 w-4" /> {quickAdding ? "Adding…" : deal.stock_remaining < 1 ? "Out of stock" : "Quick add to cart"}
         </button>
       </div>
     </motion.article>

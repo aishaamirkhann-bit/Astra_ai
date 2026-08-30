@@ -74,4 +74,5 @@ class DealReservationResponse(BaseModel):
     quantity: int
     stock_remaining: int
     expires_at: str
+    order_ref: str
     message: str

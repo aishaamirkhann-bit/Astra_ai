@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { ShieldCheck, Loader2, ArrowRight, RotateCw } from "lucide-react";
 import { verifyOtp, resendOtp } from "@/lib/api";
-import { storeSession, getPendingOtp, storePendingOtp, clearPendingOtp } from "@/lib/auth";
+import { storeSession, getPendingOtp, storePendingOtp, clearPendingOtp, consumePostAuthRedirect } from "@/lib/auth";
 
 const CODE_LENGTH = 6;
 
@@ -68,7 +68,7 @@ export default function VerifyOtpPage() {
       const session = await verifyOtp({ otp_token: pending.otp_token, code });
       storeSession(session);
       clearPendingOtp();
-      router.push("/");
+      router.replace(consumePostAuthRedirect());
       router.refresh();
     } catch {
       setError("Incorrect or expired code. Try again or resend.");

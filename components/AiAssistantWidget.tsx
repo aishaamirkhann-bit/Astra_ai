@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { Sparkles, Star, ShieldCheck, ShoppingCart, X, Check } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { AiAssistantSuggestion } from "@/lib/types";
 import { addToCart } from "@/lib/api";
 
 export default function AiAssistantWidget({ suggestion }: { suggestion: AiAssistantSuggestion }) {
   const [open, setOpen] = useState(true);
   const [cartState, setCartState] = useState<"idle" | "loading" | "added" | "error">("idle");
+  useEffect(() => { setOpen(window.sessionStorage.getItem("astra:assistant-dismissed") !== suggestion.product.slug); }, [suggestion.product.slug]);
   if (!open) return null;
 
   const { product } = suggestion;
@@ -31,7 +32,7 @@ export default function AiAssistantWidget({ suggestion }: { suggestion: AiAssist
           <h2 className="font-display text-sm font-semibold text-ink-100">AI Assistant</h2>
         </div>
         <button
-          onClick={() => setOpen(false)}
+          onClick={() => { window.sessionStorage.setItem("astra:assistant-dismissed", product.slug); setOpen(false); }}
           aria-label="Dismiss assistant suggestion"
           className="text-ink-500 hover:text-ink-100"
         >

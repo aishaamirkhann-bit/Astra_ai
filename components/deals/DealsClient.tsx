@@ -5,7 +5,8 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Bot, CheckCircle2, ChevronDown, Radar, Search, Send, SlidersHorizontal, X } from "lucide-react";
 import DealCard from "@/components/deals/DealCard";
 import DealQuickView from "@/components/deals/DealQuickView";
-import { getDealDetails, getDeals, getDealsWebSocketUrl, reserveDeal } from "@/lib/api";
+import FinancialConsentModal from "@/components/FinancialConsentModal";
+import { addToCart, approveOrder, cancelOrder, getBudgetDashboard, getDealDetails, getDeals, getDealsWebSocketUrl, reserveDeal } from "@/lib/api";
 import type { DealDetail, DealOut } from "@/lib/types";
 
 type Category = "All" | DealOut["category"];
@@ -28,6 +29,11 @@ export default function DealsClient({ initialDeals }: { initialDeals: DealOut[] 
   const [loadingDealId, setLoadingDealId] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<"cart" | "reserve" | null>(null);
   const [notice, setNotice] = useState("");
+  const [approval, setApproval] = useState<{ orderRef: string; expiresAt: string; amount: number; status: "pending" | "approved" | "cancelled" } | null>(null);
+  const [consentOpen, setConsentOpen] = useState(false);
+  const [busyApproval, setBusyApproval] = useState(false);
+  const [quickAddingId, setQuickAddingId] = useState<string | null>(null);
+  const [goalAllocation, setGoalAllocation] = useState<{ goalId: number; amount: number } | null>(null);
 
   const deals = useMemo(() => {
     const filtered = liveDeals.filter((deal) => (category === "All" || deal.category === category) && (maxPrice === null || deal.price <= maxPrice));
@@ -35,20 +41,53 @@ export default function DealsClient({ initialDeals }: { initialDeals: DealOut[] 
   }, [category, liveDeals, maxPrice, sort]);
 
   useEffect(() => {
-    const socket = new WebSocket(getDealsWebSocketUrl());
-    socket.onmessage = (message) => {
-      const event = JSON.parse(message.data) as { type?: string; deal_id?: string; stock_remaining?: number };
-      if (!["deal_updated", "stock_changed", "deal_expired"].includes(event.type ?? "")) return;
-      void getDeals().then(setLiveDeals).catch(() => undefined);
-      setSelectedDeal((current) => {
-        if (!current || current.id !== event.deal_id) return current;
-        if (event.type === "deal_expired") return null;
-        return typeof event.stock_remaining === "number" ? { ...current, stock_remaining: event.stock_remaining } : current;
-      });
+    let socket: WebSocket | null = null;
+    let reconnectTimer: number | null = null;
+    let stopped = false;
+
+    const connect = () => {
+      socket = new WebSocket(getDealsWebSocketUrl());
+      socket.onmessage = (message) => {
+        try {
+          const event = JSON.parse(message.data) as { type?: string; deal_id?: string; stock_remaining?: number };
+          if (!["deal_updated", "stock_changed", "deal_expired"].includes(event.type ?? "")) return;
+          void getDeals().then(setLiveDeals).catch(() => undefined);
+          setSelectedDeal((current) => {
+            if (!current || current.id !== event.deal_id) return current;
+            if (event.type === "deal_expired") return null;
+            return typeof event.stock_remaining === "number" ? { ...current, stock_remaining: event.stock_remaining } : current;
+          });
+        } catch {
+          // Ignore malformed frames; the next valid event refreshes the feed.
+        }
+      };
+      socket.onclose = () => {
+        if (!stopped) reconnectTimer = window.setTimeout(connect, 3000);
+      };
     };
-    const ping = window.setInterval(() => { if (socket.readyState === WebSocket.OPEN) socket.send("ping"); }, 20000);
-    return () => { window.clearInterval(ping); socket.close(); };
+
+    connect();
+    const ping = window.setInterval(() => { if (socket?.readyState === WebSocket.OPEN) socket.send("ping"); }, 20000);
+    return () => {
+      stopped = true;
+      window.clearInterval(ping);
+      if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
+      socket?.close();
+    };
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const dealId = params.get("deal");
+    const goalId = Number(params.get("goal"));
+    if (goalId > 0) void getBudgetDashboard().then((dashboard) => {
+      const goal = dashboard.goals.find((item) => item.goal_id === goalId);
+      if (goal) setGoalAllocation({ goalId, amount: goal.saved_amount });
+    }).catch(() => undefined);
+    if (!dealId) return;
+    const matched = initialDeals.find((deal) => deal.id === dealId);
+    if (matched) void openDeal(matched);
+  }, [initialDeals]);
 
   function submitPrompt(event: FormEvent) {
     event.preventDefault();
@@ -66,6 +105,7 @@ export default function DealsClient({ initialDeals }: { initialDeals: DealOut[] 
   }
 
   async function openDeal(deal: DealOut) {
+    setApproval(null);
     setLoadingDealId(deal.id);
     try {
       setSelectedDeal(await getDealDetails(deal.id));
@@ -80,16 +120,54 @@ export default function DealsClient({ initialDeals }: { initialDeals: DealOut[] 
     setBusyAction(action);
     try {
       if (action === "cart") {
-        setNotice(`${deal.name} added to your Astra cart.`);
+        const response = await addToCart(deal.slug, selection.quantity, selection);
+        setNotice(response.message);
       } else {
         const response = await reserveDeal(deal.id, selection);
-        setNotice(response.message);
+        setNotice(`${response.message} Approval order ${response.order_ref} is ready.`);
+        setApproval({ orderRef: response.order_ref, expiresAt: response.expires_at, amount: deal.price * selection.quantity, status: "pending" });
         setSelectedDeal({ ...deal, stock_remaining: response.stock_remaining });
+        setLiveDeals((current) => current.map((item) => item.id === deal.id ? { ...item, stock_remaining: response.stock_remaining } : item));
       }
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Astra could not complete that action.");
     } finally {
       setBusyAction(null);
+    }
+  }
+
+  async function handleApproval(action: "approve" | "cancel", consentId?: string) {
+    if (!approval || !selectedDeal) return;
+    setBusyApproval(true);
+    try {
+      const response = action === "approve" ? await approveOrder(approval.orderRef, consentId) : await cancelOrder(approval.orderRef);
+      setApproval({ ...approval, status: response.status });
+      setNotice(response.message);
+      setConsentOpen(false);
+      if (action === "cancel") {
+        const refreshed = await getDealDetails(selectedDeal.id);
+        setSelectedDeal(refreshed);
+        setLiveDeals((current) => current.map((item) => item.id === refreshed.id ? refreshed : item));
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Approval action failed.";
+      if (action === "approve" && message.includes("FINANCIAL_CONSENT_REQUIRED")) setConsentOpen(true);
+      else setNotice(message);
+    } finally {
+      setBusyApproval(false);
+    }
+  }
+
+  async function handleQuickAdd(deal: DealOut) {
+    if (quickAddingId) return;
+    setQuickAddingId(deal.id);
+    try {
+      const response = await addToCart(deal.slug);
+      setNotice(`${response.message}. Cart now has ${response.cart_total_quantity} item(s).`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Astra could not add this deal to the cart.");
+    } finally {
+      setQuickAddingId(null);
     }
   }
 
@@ -115,7 +193,7 @@ export default function DealsClient({ initialDeals }: { initialDeals: DealOut[] 
       <div className="mb-4 flex items-end justify-between"><div><p className="font-display text-lg font-semibold text-ink-100">{category === "All" ? "AI-verified deals" : `${category} deals`}</p><p className="mt-1 text-xs text-ink-500">Sorted by {sortLabels[sort].toLowerCase()}</p></div><span className="font-mono text-xs text-ink-500">{deals.length} results</span></div>
       <motion.div layout className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <AnimatePresence mode="popLayout">
-          {deals.map((deal) => <DealCard key={deal.id} deal={deal} onOpen={(item) => void openDeal(item)} onQuickAdd={(item) => { setNotice(`${item.name} added to your Astra cart.`); }} />)}
+          {deals.map((deal) => <DealCard key={deal.id} deal={deal} onOpen={(item) => void openDeal(item)} onQuickAdd={(item) => void handleQuickAdd(item)} quickAdding={quickAddingId === deal.id} />)}
         </AnimatePresence>
       </motion.div>
       {deals.length === 0 && <div className="glass rounded-xl2 p-10 text-center"><Search className="mx-auto h-6 w-6 text-ink-500" /><p className="mt-3 text-sm font-semibold text-ink-100">No verified deals match this request</p><button type="button" onClick={() => { setCategory("All"); setMaxPrice(null); }} className="mt-3 text-xs font-semibold text-astra-cyan">Reset AI filters</button></div>}
@@ -126,7 +204,8 @@ export default function DealsClient({ initialDeals }: { initialDeals: DealOut[] 
 
       <AnimatePresence>{notice && <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="fixed bottom-24 right-5 z-[60] flex max-w-sm items-start gap-2 rounded-xl border border-emerald-500/20 bg-slate-950 p-3 text-xs text-slate-100 shadow-2xl"><CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" /><span>{notice}</span><button type="button" onClick={() => setNotice("")} aria-label="Dismiss notification"><X className="h-3.5 w-3.5 text-slate-500" /></button></motion.div>}</AnimatePresence>
       <AnimatePresence>{loadingDealId && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 grid place-items-center bg-slate-950/55 backdrop-blur-sm"><div className="flex items-center gap-3 rounded-xl bg-slate-950 px-5 py-4 text-xs text-white shadow-2xl"><Radar className="h-4 w-4 animate-spin text-violet-400" /> Loading live deal intelligence…</div></motion.div>}</AnimatePresence>
-      <DealQuickView deal={selectedDeal} onClose={() => setSelectedDeal(null)} onAction={(deal, action, selection) => void handleAction(deal, action, selection)} busyAction={busyAction} />
+      <DealQuickView deal={selectedDeal} goalAllocation={goalAllocation} onClose={() => setSelectedDeal(null)} onAction={(deal, action, selection) => void handleAction(deal, action, selection)} busyAction={busyAction} approval={approval} busyApproval={busyApproval} onApproval={(action) => void handleApproval(action)} />
+      {approval && <FinancialConsentModal open={consentOpen} amount={approval.amount} orderRef={approval.orderRef} onClose={() => setConsentOpen(false)} onAuthorized={(consentId) => handleApproval("approve", consentId)} />}
     </div>
   );
 }

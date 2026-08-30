@@ -52,16 +52,18 @@ class GoalsWalletRailOut(BaseModel):
 
 
 class WalletLedgerEntryOut(BaseModel):
-    id: int
+    id: str
     label: str
     amount: float
     entry_type: Literal["credit", "debit"]
+    transaction_type: Literal["Credit", "Debit", "Refund"]
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class WalletDetailOut(BaseModel):
+    user_id: int
     available_balance: float
     available_balance_display: str
     ledger: list[WalletLedgerEntryOut]

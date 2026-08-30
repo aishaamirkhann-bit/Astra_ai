@@ -211,7 +211,53 @@ lock per deal and then a PostgreSQL `SELECT ... FOR UPDATE` row lock; both are
 required in multi-instance production deployments. Every Trust Agent decision
 and stock reservation is written to `deal_audit_logs` with its scoring inputs.
 
-## 8. Next Steps (beyond Home page)
+Deal checkout persists variant-aware `cart_items`. `POST /deals/{id}/reserve`
+atomically reserves stock and creates a user-owned `pending_approval` order. An
+approval expiry or cancellation releases the reservation exactly once and
+restores inventory; approval moves the order into the reversible checkout
+window. In production set `APP_ENV=production`, use a PostgreSQL `DATABASE_URL`
+and TLS Redis `REDIS_URL`, apply the SQL migration, then run the API. SQLite and
+the in-process WebSocket fan-out are development fallbacks only.
+
+## 8. ASTRA Check verification module
+
+ASTRA Check persists seller verification profiles, immutable trust decisions,
+and cached aggregate metrics in `seller_verifications`, `trust_audit_logs`, and
+`platform_trust_metrics`. The live inspection formula is
+seller verification 40%, buyer-review authenticity sentiment 40%, and price
+stability 20%. Scores below 75 immediately deactivate the associated Deal and
+emit `deal_expired` through the same Redis/WebSocket channel used by Deals.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/astra-check/stats` | Platform trust and scan metrics |
+| POST | `/api/v1/astra-check/inspect` | Product ID/seller live inspection |
+| GET | `/api/v1/astra-check/seller/{id}` | Seller profile and audit history |
+| POST | `/api/v1/astra-check/override` | Audited admin score override |
+| POST | `/api/v1/astra-check/actions/flagged` | Flag and unlist a product |
+| POST | `/api/v1/astra-check/actions/approved_for_deals` | Clear flag and push an eligible Deal |
+
+Verification actions require the `admin` role when `APP_ENV=production`; the
+seeded demo user is allowed only in development so the local dashboard remains
+fully interactive.
+
+## 9. Goals & Budget Agent
+
+The Budget Agent stores monthly limits, financial shopping goals, and deduplicated
+AI alerts in `user_budgets`, `shopping_goals`, and `budget_alerts`. Only active
+Deals with an ASTRA Check score of 75 or higher can match a goal. Matches that
+would exceed the remaining monthly balance also create a `Budget_Warning` with
+an installment suggestion and are broadcast over `/ws/deals`.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/goals/budget` | Budget overview, goals, savings, and alerts |
+| PUT | `/api/v1/goals/budget` | Adjust the monthly spending limit |
+| POST | `/api/v1/goals/create` | Create a financial shopping goal |
+| PUT | `/api/v1/goals/{id}/update` | Deposit funds or adjust a goal |
+| GET | `/api/v1/goals/matched-deals` | Verified, budget-aware Deal matches |
+
+## 10. Next Steps
 
 - Add Alembic for real migrations (`alembic init alembic`) once schema stabilizes.
 - Build `/explore`, `/goals`, `/orders`, `/wallet`, `/messages`, `/b2b` endpoint modules
