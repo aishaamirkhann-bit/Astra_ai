@@ -101,6 +101,7 @@ def test_deal_reservation_creates_approval_order_and_cancel_releases_stock(auth_
         order = db.query(Order).filter(Order.order_ref == payload["order_ref"]).first()
         reservation_id = order.reservation_id
         db.delete(order)
+        db.flush()
         db.query(DealReservation).filter(DealReservation.id == reservation_id).delete()
         db.commit()
 
@@ -134,6 +135,7 @@ def test_concurrent_reservations_cannot_oversell(auth_client) -> None:
         product.stock_count = original_stock
         deal_row.stock_remaining = original_stock
         db.delete(order)
+        db.flush()
         db.query(DealReservation).filter(DealReservation.id == reservation_id).delete()
         db.commit()
 
@@ -171,5 +173,6 @@ def test_approved_deal_is_listed_and_can_be_reversed(auth_client) -> None:
         db.query(WalletTransaction).filter(WalletTransaction.reference_order_id == order.id).delete()
         db.query(FinancialConsentLog).filter(FinancialConsentLog.reference_order_id == order.id).delete()
         db.delete(order)
+        db.flush()
         db.query(DealReservation).filter(DealReservation.id == reservation_id).delete()
         db.commit()
