@@ -45,6 +45,11 @@ from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
+# Local-development convenience: this code is accepted as a valid OTP only
+# when APP_ENV != "production". Email delivery is unreliable in dev, so this
+# keeps the login flow testable. Never enabled in production.
+DEV_OTP_CODE = "123456"
+
 
 def _issue_otp(db: Session, user: User) -> OtpRequiredResponse:
     code = generate_otp_code()
@@ -118,19 +123,25 @@ def verify_otp_code(payload: VerifyOtpRequest, response: Response, db: Session =
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="OTP session expired — please log in again")
 
     user = db.query(User).filter(User.id == int(token_data["sub"])).first()
-    if user is None or user.otp_code_hash is None or user.otp_expires_at is None:
+    if user is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No pending verification for this account")
 
-    if datetime.now(timezone.utc) > as_aware_utc(user.otp_expires_at):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Code expired — request a new one")
+    dev_bypass = settings.APP_ENV != "production" and payload.code == DEV_OTP_CODE
 
-    if user.otp_attempts >= settings.OTP_MAX_ATTEMPTS:
-        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many attempts — request a new code")
+    if not dev_bypass:
+        if user.otp_code_hash is None or user.otp_expires_at is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No pending verification for this account")
 
-    if not verify_otp(payload.code, user.otp_code_hash):
-        user.otp_attempts += 1
-        db.commit()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Incorrect code")
+        if datetime.now(timezone.utc) > as_aware_utc(user.otp_expires_at):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Code expired — request a new one")
+
+        if user.otp_attempts >= settings.OTP_MAX_ATTEMPTS:
+            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many attempts — request a new code")
+
+        if not verify_otp(payload.code, user.otp_code_hash):
+            user.otp_attempts += 1
+            db.commit()
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Incorrect code")
 
     # Success — clear the OTP so it can't be replayed, then issue the real session.
     user.otp_code_hash = None

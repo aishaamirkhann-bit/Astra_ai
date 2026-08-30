@@ -79,3 +79,32 @@ def test_b2b_evaluate_writes_audit_trail(auth_client) -> None:
 def test_b2b_evaluate_requires_authentication(anonymous_client) -> None:
     response = anonymous_client.post("/api/v1/b2b/evaluate", json={"protocol": "UCP/1.2"})
     assert response.status_code == 401
+
+
+def test_dev_otp_code_123456_always_verifies_in_development(anonymous_client) -> None:
+    challenge = anonymous_client.post(
+        "/api/v1/auth/login", json={"email": "aisha@astra.ai", "password": "demo1234"}
+    )
+    assert challenge.status_code == 200
+    otp_token = challenge.json()["otp_token"]
+
+    verified = anonymous_client.post(
+        "/api/v1/auth/verify-otp", json={"otp_token": otp_token, "code": "123456"}
+    )
+    assert verified.status_code == 200
+    body = verified.json()
+    assert body["access_token"]
+    assert body["user"]["email"] == "aisha@astra.ai"
+
+
+def test_wrong_otp_code_is_still_rejected(anonymous_client) -> None:
+    challenge = anonymous_client.post(
+        "/api/v1/auth/login", json={"email": "aisha@astra.ai", "password": "demo1234"}
+    )
+    assert challenge.status_code == 200
+    otp_token = challenge.json()["otp_token"]
+
+    rejected = anonymous_client.post(
+        "/api/v1/auth/verify-otp", json={"otp_token": otp_token, "code": "000000"}
+    )
+    assert rejected.status_code == 400
