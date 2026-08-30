@@ -76,6 +76,9 @@ def _as_utc(value: datetime | None) -> datetime | None:
 def bootstrap_deals_data(db: Session) -> None:
     """Idempotently synchronize catalog, metrics, and initial market observations."""
     now = datetime.now(timezone.utc)
+
+    # Pass 1 — upsert products, then flush so FK-dependent rows below can
+    # reference them. (SQLite never enforced the FK, which masked this order.)
     for item in PRODUCTS:
         seller_id = _slug(item["seller_name"])
         product = db.get(Product, item["id"])
@@ -100,7 +103,11 @@ def bootstrap_deals_data(db: Session) -> None:
             ) or 0
             if product.stock_count is None or (product.stock_count == 10 and reservation_count == 0):
                 product.stock_count = STOCK_BY_SLUG.get(item["id"], 10)
+    db.flush()
 
+    # Pass 2 — seller metrics + initial market price observations.
+    for item in PRODUCTS:
+        seller_id = _slug(item["seller_name"])
         metric = db.get(SellerMetric, seller_id)
         target = float(item["trust"])
         seller_rating = min(100.0, target + (2.0 if item["is_verified_seller"] else -1.0))

@@ -11,9 +11,11 @@ depends_on = None
 def upgrade() -> None:
     op.execute("ALTER TYPE orderstatus ADD VALUE IF NOT EXISTS 'SHIPPED'")
     op.execute("ALTER TYPE orderstatus ADD VALUE IF NOT EXISTS 'DELIVERED'")
-    op.add_column("orders", sa.Column("shipped_at", sa.DateTime(timezone=True), nullable=True))
-    op.add_column("orders", sa.Column("delivered_at", sa.DateTime(timezone=True), nullable=True))
-    op.create_index("ix_notifications_user_created", "notifications", ["user_id", "created_at"])
+    # IF NOT EXISTS keeps this migration safe on fresh databases where the
+    # baseline create_all already produced these columns.
+    op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipped_at TIMESTAMP WITH TIME ZONE")
+    op.execute("ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMP WITH TIME ZONE")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_notifications_user_created ON notifications (user_id, created_at)")
 
 
 def downgrade() -> None:
