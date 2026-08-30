@@ -2,7 +2,7 @@
 Shared FastAPI dependencies: DB session + current authenticated user.
 Har protected endpoint me `user: User = Depends(get_current_user)` likho.
 """
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
@@ -15,6 +15,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=F
 
 
 def get_current_user(
+    request: Request,
     token: str | None = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> User:
@@ -27,6 +28,7 @@ def get_current_user(
     # DEV CONVENIENCE: agar frontend abhi token nahi bhej raha (Home page
     # demo/local dev), to hum seeded demo user "Aisha" wapas kar dete hain.
     # Production me yeh fallback hata dena — sirf valid JWT accept hoga.
+    token = token or request.cookies.get(settings.AUTH_COOKIE_NAME)
     if token is None:
         if settings.APP_ENV == "production":
             # The demo-user fallback is a dev convenience only — never allow

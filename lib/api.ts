@@ -12,37 +12,49 @@ import type {
   DealDetail,
   DealListResponse,
   DealReservationResponse,
+  AddToCartResponse,
+  OrderOut,
+  AstraCheckDashboardStats,
+  TrustActionResponse,
+  TrustInspection,
+  BudgetDashboardOut,
+  MatchedDealOut,
+  ShoppingGoalOut,
+  ConsentAuthorizationResponse,
+  OrderDetail,
+  NotificationList,
+  ProductDetail,
+  Cart,
+  CartCheckout,
+  ChatConversation,
 } from "@/lib/types";
-import { getToken } from "@/lib/auth";
-
 // Set in .env.local — see lib/api.ts usage below.
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-/**
- * NOTE on auth: the backend's get_current_user has a dev-mode fallback —
- * if no Bearer token is sent, it returns the seeded demo user ("Aisha").
- * That fallback still exists for pages that don't need real auth (Home,
- * etc). Once a token is present (post login/signup, see lib/auth.ts) it
- * gets attached automatically below.
- */
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = getToken();
-
+async function apiFetch<T>(path: string, init?: RequestInit, cookieHeader?: string): Promise<T> {
   const res = await fetch(`${API_URL}/api/v1${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(cookieHeader ? { Cookie: cookieHeader } : {}),
       ...init?.headers,
     },
     // Home page data changes often (countdown, wallet, approval state) —
     // don't let Next.js cache this across requests.
     cache: "no-store",
+    credentials: "include",
   });
 
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    throw new Error(`API ${path} failed: ${res.status} ${body}`);
+    let detail = body;
+    try {
+      const parsed = JSON.parse(body) as { detail?: string | Array<{ msg?: string }> };
+      detail = typeof parsed.detail === "string" ? parsed.detail : Array.isArray(parsed.detail) ? parsed.detail.map((item) => item.msg).filter(Boolean).join(", ") : body;
+    } catch {
+      // Keep a plain-text server response when it is not JSON.
+    }
+    throw new Error(detail || `Request failed with status ${res.status}`);
   }
 
   // 204 No Content (goal delete) has no body to parse.
@@ -95,8 +107,31 @@ export function resendOtp(payload: { otp_token: string }): Promise<OtpRequiredRe
 }
 
 /** Single call that hydrates the entire Home page in one round-trip. */
-export function getHomePage(): Promise<HomePageOut> {
-  return apiFetch<HomePageOut>("/home");
+export function getHomePage(cookieHeader?: string): Promise<HomePageOut> {
+  return apiFetch<HomePageOut>("/home", undefined, cookieHeader);
+}
+
+export function getExploreData(cookieHeader?: string): Promise<{ available_balance: number }> {
+  return apiFetch<{ available_balance: number }>("/explore/wallet", undefined, cookieHeader);
+}
+
+export function getCurrentUser(cookieHeader?: string): Promise<LoginResponse["user"]> { return apiFetch("/auth/me", undefined, cookieHeader); }
+export function logoutUser(): Promise<void> { return apiFetch<void>("/auth/logout", { method: "POST" }); }
+
+export function getAstraCheckDashboardStats(): Promise<AstraCheckDashboardStats> {
+  return apiFetch<AstraCheckDashboardStats>("/astra-check/stats");
+}
+
+export function inspectTrust(query: string): Promise<TrustInspection> {
+  return apiFetch<TrustInspection>("/astra-check/inspect", { method: "POST", body: JSON.stringify({ query }) });
+}
+
+export function applyTrustAction(
+  action: "manual_override" | "flagged" | "approved_for_deals",
+  payload: { product_id: string; reason: string; score?: number },
+): Promise<TrustActionResponse> {
+  const path = action === "manual_override" ? "/astra-check/override" : `/astra-check/actions/${action}`;
+  return apiFetch<TrustActionResponse>(path, { method: "POST", body: JSON.stringify(payload) });
 }
 
 /** Promoted listings shown on the Deals page. */
@@ -123,10 +158,10 @@ export function getDealsWebSocketUrl(): string {
 }
 
 /** HumanApprovalWidget's "Approve Transaction" button. */
-export function approveOrder(orderRef: string): Promise<ApprovalActionResponse> {
+export function approveOrder(orderRef: string, consentId?: string): Promise<ApprovalActionResponse> {
   return apiFetch<ApprovalActionResponse>("/approval/approve", {
     method: "POST",
-    body: JSON.stringify({ order_ref: orderRef }),
+    body: JSON.stringify({ order_ref: orderRef, consent_id: consentId }),
   });
 }
 
@@ -139,11 +174,48 @@ export function cancelOrder(orderRef: string): Promise<ApprovalActionResponse> {
 }
 
 /** AiAssistantWidget's "Add to Cart" button. */
-export function addToCart(productSlug: string, quantity = 1): Promise<{ message: string; quantity: number }> {
-  return apiFetch<{ message: string; quantity: number }>("/ai-assistant/add-to-cart", {
+export function addToCart(
+  productSlug: string,
+  quantity = 1,
+  selection: { size?: string; color?: string; storage?: string } = {},
+): Promise<AddToCartResponse> {
+  return apiFetch<AddToCartResponse>("/cart/add", {
     method: "POST",
-    body: JSON.stringify({ product_slug: productSlug, quantity }),
+    body: JSON.stringify({ product_slug: productSlug, quantity, ...selection }),
   });
+}
+
+export function getProduct(slug: string, cookieHeader?: string): Promise<ProductDetail> { return apiFetch<ProductDetail>(`/products/${slug}`, undefined, cookieHeader); }
+export function getCart(cookieHeader?: string): Promise<Cart> { return apiFetch<Cart>("/cart", undefined, cookieHeader); }
+export function updateCartItem(itemId: number, quantity: number): Promise<Cart> { return apiFetch<Cart>(`/cart/${itemId}`, { method: "PUT", body: JSON.stringify({ quantity }) }); }
+export function removeCartItem(itemId: number): Promise<Cart> { return apiFetch<Cart>(`/cart/${itemId}`, { method: "DELETE" }); }
+export function checkoutCart(payload: { shipping_address: string; consent_id?: string }): Promise<CartCheckout> { return apiFetch<CartCheckout>("/cart/checkout", { method: "POST", body: JSON.stringify(payload) }); }
+export function getChatHistory(): Promise<ChatConversation[]> { return apiFetch<ChatConversation[]>("/chat/history"); }
+export function streamChat(payload: { message: string; conversation_id?: number }): Promise<Response> { return fetch(`${API_URL}/api/v1/chat/stream`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); }
+
+export function authorizeFinancialConsent(payload: { amount: number; auth_method: "Voice" | "OTP"; order_ref: string; voice_transcript?: string; consent_id?: string; otp_code?: string }): Promise<ConsentAuthorizationResponse> {
+  return apiFetch<ConsentAuthorizationResponse>("/wallet/authorize-consent", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function getWalletWebSocketUrl(userId: number): string {
+  return `${API_URL.replace(/^http/, "ws")}/ws/wallet/${userId}`;
+}
+
+export function getOrders(cookieHeader?: string): Promise<OrderOut[]> {
+  return apiFetch<OrderOut[]>("/orders", undefined, cookieHeader);
+}
+
+export function getOrderDetail(orderRef: string): Promise<OrderDetail> { return apiFetch<OrderDetail>(`/orders/${orderRef}`); }
+export function reorderItem(orderRef: string): Promise<{ order_ref: string; cart_total_quantity: number; message: string }> { return apiFetch(`/orders/${orderRef}/reorder`, { method: "POST" }); }
+
+export function getNotifications(): Promise<NotificationList> { return apiFetch<NotificationList>("/notifications"); }
+export function markNotificationRead(id: string): Promise<void> { return apiFetch<void>(`/notifications/${id}/read`, { method: "POST" }); }
+export function clearNotifications(): Promise<void> { return apiFetch<void>("/notifications", { method: "DELETE" }); }
+export function getNotificationsWebSocketUrl(): string { return `${API_URL.replace(/^http/, "ws")}/ws/notifications`; }
+export function getOrdersWebSocketUrl(): string { return `${API_URL.replace(/^http/, "ws")}/ws/orders`; }
+
+export function reverseOrder(orderRef: string): Promise<{ order_ref: string; status: "cancelled"; message: string }> {
+  return apiFetch<{ order_ref: string; status: "cancelled"; message: string }>(`/orders/${orderRef}/reverse`, { method: "POST" });
 }
 
 // ---------------------------------------------------------------------------
@@ -152,6 +224,26 @@ export function addToCart(productSlug: string, quantity = 1): Promise<{ message:
 
 export function getGoals(): Promise<GoalOut[]> {
   return apiFetch<GoalOut[]>("/goals");
+}
+
+export function getBudgetDashboard(cookieHeader?: string): Promise<BudgetDashboardOut> {
+  return apiFetch<BudgetDashboardOut>("/goals/budget", undefined, cookieHeader);
+}
+
+export function createShoppingGoal(payload: { target_title: string; target_price: number; category: string; priority_level: "Low" | "Medium" | "High"; deadline?: string | null }): Promise<ShoppingGoalOut> {
+  return apiFetch<ShoppingGoalOut>("/goals/create", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function updateShoppingGoal(goalId: number, payload: { target_price?: number; deposit_amount?: number; status?: "Active" | "Completed" | "Paused"; priority_level?: "Low" | "Medium" | "High"; deadline?: string | null }): Promise<ShoppingGoalOut> {
+  return apiFetch<ShoppingGoalOut>(`/goals/${goalId}/update`, { method: "PUT", body: JSON.stringify(payload) });
+}
+
+export function getMatchedDeals(cookieHeader?: string): Promise<MatchedDealOut[]> {
+  return apiFetch<MatchedDealOut[]>("/goals/matched-deals", undefined, cookieHeader);
+}
+
+export function updateMonthlyBudget(payload: { monthly_limit: number; current_spent?: number; rollover_savings?: number }): Promise<BudgetDashboardOut> {
+  return apiFetch<BudgetDashboardOut>("/goals/budget", { method: "PUT", body: JSON.stringify(payload) });
 }
 
 export function createGoal(payload: GoalCreatePayload): Promise<GoalOut> {
@@ -184,8 +276,8 @@ export function allocateToGoal(goalId: number, amount: number): Promise<GoalOut>
 // Wallet — powers the /wallet page.
 // ---------------------------------------------------------------------------
 
-export function getWallet(): Promise<WalletDetailOut> {
-  return apiFetch<WalletDetailOut>("/wallet");
+export function getWallet(cookieHeader?: string): Promise<WalletDetailOut> {
+  return apiFetch<WalletDetailOut>("/wallet", undefined, cookieHeader);
 }
 
 export function getWalletSummary(): Promise<WalletOut> {

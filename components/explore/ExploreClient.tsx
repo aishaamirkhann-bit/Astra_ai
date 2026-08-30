@@ -12,9 +12,11 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 export default function ExploreClient({
   initialQuery,
   initialCategory,
+  initialWalletBalance,
 }: {
   initialQuery: string;
   initialCategory: string | null;
+  initialWalletBalance?: number | null;
 }) {
   const [query, setQuery] = useState(initialQuery);
   const [category, setCategory] = useState<string | null>(initialCategory);
@@ -27,14 +29,14 @@ export default function ExploreClient({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [budgetMode, setBudgetMode] = useState(false);
-  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [walletBalance, setWalletBalance] = useState<number | null>(initialWalletBalance ?? null);
   const [retryKey, setRetryKey] = useState(0);
   const [searchContext, setSearchContext] = useState<{ mode: "voice" | "image"; label: string; previewUrl?: string } | null>(null);
 
   useEffect(() => {
     const loadWalletBalance = async () => {
       try {
-        const response = await fetch(`${API_URL}/api/v1/explore/wallet`);
+        const response = await fetch(`${API_URL}/api/v1/explore/wallet`, { credentials: "include" });
         if (!response.ok) return;
 
         const payload = (await response.json()) as { available_balance?: unknown };
@@ -68,7 +70,7 @@ export default function ExploreClient({
     body.append("min_price", String(minPrice));
     body.append("max_price", String(maxPrice));
     try {
-      const response = await fetch(`${API_URL}/api/v1/explore/budget-recommendations`, { method: "POST", body });
+      const response = await fetch(`${API_URL}/api/v1/explore/budget-recommendations`, { method: "POST", body, credentials: "include" });
       if (!response.ok) throw new Error("Budget service unavailable");
       const payload = await response.json();
       setProducts(payload.items);
@@ -94,7 +96,7 @@ export default function ExploreClient({
     body.append("limit", "50");
     semanticTags.forEach((tag) => body.append("semantic_tags", tag));
     try {
-      const response = await fetch(`${API_URL}/api/v1/explore/search`, { method: "POST", body });
+      const response = await fetch(`${API_URL}/api/v1/explore/search`, { method: "POST", body, credentials: "include" });
       if (!response.ok) throw new Error("Search service is unavailable");
       const payload = await response.json();
       const items = Array.isArray(payload) ? payload : payload.items;
@@ -109,6 +111,22 @@ export default function ExploreClient({
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const raw = window.sessionStorage.getItem("astra:image-search");
+    if (!raw) return;
+    window.sessionStorage.removeItem("astra:image-search");
+    try {
+      const saved = JSON.parse(raw) as { name: string; type: string; data: string };
+      fetch(saved.data).then((response) => response.blob()).then((blob) => {
+        const file = new File([blob], saved.name, { type: saved.type || blob.type });
+        setSearchContext({ mode: "image", label: saved.name, previewUrl: URL.createObjectURL(blob) });
+        void searchWithFile(file, "image");
+      }).catch(() => setError("Could not restore the selected image search."));
+    } catch { setError("Could not restore the selected image search."); }
+    // This one-shot handoff intentionally runs only when Explore mounts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (budgetMode) return;
@@ -131,7 +149,7 @@ export default function ExploreClient({
         const isDefaultCatalogRequest = !query.trim() && !category && minPrice === 0 && maxPrice === 500000 && semanticTags.length === 0 && sortBy === "most_relevant";
         const response = await fetch(
           isDefaultCatalogRequest ? `${API_URL}/api/v1/explore/products` : `${API_URL}/api/v1/explore/search`,
-          isDefaultCatalogRequest ? { signal: controller.signal } : { method: "POST", body, signal: controller.signal },
+          isDefaultCatalogRequest ? { signal: controller.signal, credentials: "include" } : { method: "POST", body, signal: controller.signal, credentials: "include" },
         );
         if (!response.ok) throw new Error("Search service is unavailable");
         const payload = await response.json();

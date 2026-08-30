@@ -17,3 +17,22 @@ class ProductOut(BaseModel):
     description: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class BuyerReviewOut(BaseModel):
+    id: str
+    buyer: str
+    rating: int
+    comment: str
+    verified: bool = True
+
+
+class ProductDetailOut(ProductOut):
+    images: list[str]
+    stock_count: int
+    seller_verified: bool
+    variants: dict[str, list[str]]
+    total_reviews: int
+    rating_breakdown: dict[str, int]
+    sentiment: dict[str, float]
+    reviews: list[BuyerReviewOut]

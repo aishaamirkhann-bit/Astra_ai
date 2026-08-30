@@ -2,9 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db
+from app.models.cart import CartItem
 from app.models.product import Product
 from app.models.user import User
-from app.schemas.ai_assistant import AiAssistantSuggestion, AddToCartRequest
+from app.schemas.ai_assistant import AddToCartRequest, AddToCartResponse, AiAssistantSuggestion, CartItemOut, CartResponse
 from app.schemas.product import ProductOut
 from app.services.finance_engine import FinanceEngine
 from app.services.recommendation_engine import RecommendationEngine
@@ -48,7 +49,24 @@ def get_ai_suggestion(
     )
 
 
-@router.post("/add-to-cart")
+@router.get("/cart", response_model=CartResponse)
+def get_cart(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    items = db.query(CartItem).filter(CartItem.user_id == current_user.id).all()
+    return CartResponse(
+        items=[CartItemOut(
+            id=item.id, product_slug=item.product_id, name=item.product.title,
+            quantity=item.quantity, size=item.size, color=item.color,
+            unit_price=item.product.base_price,
+        ) for item in items],
+        total_quantity=sum(item.quantity for item in items),
+        subtotal=round(sum(item.quantity * item.product.base_price for item in items), 2),
+    )
+
+
+@router.post("/add-to-cart", response_model=AddToCartResponse)
 def add_to_cart(
     payload: AddToCartRequest,
     db: Session = Depends(get_db),
@@ -59,6 +77,27 @@ def add_to_cart(
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    # NOTE: cart/session storage out of scope for this Home-page slice —
-    # wire this to a Cart model + table when the cart/checkout page is built.
-    return {"message": f"{product.title} added to cart", "quantity": payload.quantity}
+    item = db.query(CartItem).filter(
+        CartItem.user_id == current_user.id,
+        CartItem.product_id == product.id,
+        CartItem.size == payload.size,
+        CartItem.color == payload.color,
+    ).first()
+    if item:
+        item.quantity += payload.quantity
+    else:
+        item = CartItem(
+            user_id=current_user.id, product_id=product.id, quantity=payload.quantity,
+            size=payload.size, color=payload.color,
+        )
+        db.add(item)
+    db.flush()
+    total_quantity = sum(
+        quantity for (quantity,) in db.query(CartItem.quantity).filter(CartItem.user_id == current_user.id).all()
+    )
+    db.commit()
+    return AddToCartResponse(
+        message=f"{product.title} added to cart",
+        quantity=item.quantity,
+        cart_total_quantity=total_quantity,
+    )

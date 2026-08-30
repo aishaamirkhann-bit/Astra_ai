@@ -18,16 +18,20 @@ class Product(Base):
     base_price = Column(Float, nullable=False)
     # Backwards-compatible domain alias used by Home/Explore services.
     price = synonym("base_price")
+    slug = synonym("id")
+    name = synonym("title")
     rating = Column(Float, nullable=False)
     total_reviews = Column(Integer, nullable=False, default=0)
     seller_name = Column(Text, nullable=False)
     is_verified_seller = Column(Boolean, nullable=False, default=False)
     badge = Column(Text, nullable=True)                 # was `tag`: "Bestseller" | "New" | "Deal" | None
+    tag = synonym("badge")
     image_url = Column(Text, nullable=False)
     semantic_tags = Column(Text, nullable=False)        # comma-separated, e.g. "fits your budget,verified seller"
     description = Column(Text, nullable=False)
     fit = Column(Text, nullable=False)                  # precomputed generic fit label ("Fits your budget" etc.)
     trust = Column(Integer, nullable=False)             # was `trust_score`
+    trust_score = synonym("trust")
     search_terms = Column(Text, nullable=False)         # comma-separated keywords for Explore search
     stock_count = Column(Integer, nullable=False, default=10)
     seller_id = Column(Text, nullable=False, index=True)

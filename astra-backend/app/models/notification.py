@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, func
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, Index, func
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
@@ -13,3 +13,5 @@ class Notification(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     owner = relationship("User", back_populates="notifications")
+
+    __table_args__ = (Index("ix_notifications_user_created", "user_id", "created_at"),)

@@ -8,10 +8,12 @@ class ApprovalStatusOut(BaseModel):
     seconds_left: int
     window_seconds: int
     prompt_text: str = "Order ready hai, kya final checkout karain?"
+    amount: float = 0
 
 
 class ApprovalActionRequest(BaseModel):
     order_ref: str
+    consent_id: str | None = None
 
 
 class ApprovalActionResponse(BaseModel):

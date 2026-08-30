@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "dev-secret-change-me"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     ALGORITHM: str = "HS256"
+    AUTH_COOKIE_NAME: str = "astra_token"
+    AUTH_COOKIE_SAMESITE: str = "lax"
+    AUTH_COOKIE_DOMAIN: str | None = None
 
     DATABASE_URL: str = "sqlite:///./astra.db"
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -29,6 +32,16 @@ class Settings(BaseSettings):
     OTP_EXPIRE_MINUTES: int = 5
     OTP_MAX_ATTEMPTS: int = 5
     OTP_TOKEN_EXPIRE_MINUTES: int = 10  # lifetime of the temp "otp_pending" token
+    RATE_LIMIT_WINDOW_SECONDS: int = 60
+    CONSENT_RATE_LIMIT: int = 10
+    OTP_RATE_LIMIT: int = 8
+
+    # External authorization providers (select and configure in production).
+    STT_PROVIDER: str = ""
+    STT_API_KEY: str = ""
+    SMS_PROVIDER: str = ""
+    SMS_API_KEY: str = ""
+    SMS_FROM_NUMBER: str = ""
 
     # --- SMTP (real email) ---
     # Fill these in .env — never commit real credentials.

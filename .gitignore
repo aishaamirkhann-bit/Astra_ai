@@ -14,6 +14,7 @@ build/
 .env
 .env.*
 !.env.example
+!.env.production.example
 
 # Python caches and local databases
 __pycache__/

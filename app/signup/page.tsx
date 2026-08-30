@@ -72,7 +72,7 @@ export default function SignupPage() {
                   autoComplete="name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Aisha Amir"
+                  placeholder="Your full name"
                   className="w-full bg-transparent text-sm text-ink-100 placeholder:text-ink-500 focus:outline-none"
                 />
               </div>
@@ -88,7 +88,7 @@ export default function SignupPage() {
                   autoComplete="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="aisha@astra.ai"
+                  placeholder="you@example.com"
                   className="w-full bg-transparent text-sm text-ink-100 placeholder:text-ink-500 focus:outline-none"
                 />
               </div>

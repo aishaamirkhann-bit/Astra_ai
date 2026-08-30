@@ -1,20 +1,13 @@
-// Small client-side helper around the JWT issued by /auth/verify-otp.
-// Kept in one place so api.ts (server + client calls) and the UI (TopBar,
-// login/signup pages) all agree on where the token lives.
+// The JWT is intentionally inaccessible to JavaScript and lives only in the
+// HTTP-only astra_token cookie. Only non-sensitive profile data is cached here.
 
 import type { LoginResponse, UserRole } from "@/lib/types";
 
-const TOKEN_KEY = "astra_token";
 const USER_KEY = "astra_user";
 // Holds the short-lived otp_token between "password submitted" and
 // "code verified" — cleared as soon as verification succeeds or fails.
 const OTP_PENDING_KEY = "astra_otp_pending";
-
-/** Safe on the server too — returns null during SSR/server-component calls. */
-export function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(TOKEN_KEY);
-}
+const POST_AUTH_REDIRECT_KEY = "astra_post_auth_redirect";
 
 export function getStoredUser(): LoginResponse["user"] | null {
   if (typeof window === "undefined") return null;
@@ -33,17 +26,15 @@ export function getUserRole(): UserRole | null {
 
 /** Called right after a successful /auth/verify-otp response. */
 export function storeSession(session: LoginResponse) {
-  window.localStorage.setItem(TOKEN_KEY, session.access_token);
   window.localStorage.setItem(USER_KEY, JSON.stringify(session.user));
 }
 
 export function clearSession() {
-  window.localStorage.removeItem(TOKEN_KEY);
   window.localStorage.removeItem(USER_KEY);
 }
 
 export function isLoggedIn(): boolean {
-  return getToken() !== null;
+  return getStoredUser() !== null;
 }
 
 // --- Pending OTP challenge (between login/register and verify-otp) ---
@@ -71,4 +62,15 @@ export function getPendingOtp(): PendingOtp | null {
 
 export function clearPendingOtp() {
   window.sessionStorage.removeItem(OTP_PENDING_KEY);
+}
+
+export function storePostAuthRedirect(path: string) {
+  const safePath = path.startsWith("/") && !path.startsWith("//") ? path : "/";
+  window.sessionStorage.setItem(POST_AUTH_REDIRECT_KEY, safePath);
+}
+
+export function consumePostAuthRedirect(): string {
+  const path = window.sessionStorage.getItem(POST_AUTH_REDIRECT_KEY) ?? "/";
+  window.sessionStorage.removeItem(POST_AUTH_REDIRECT_KEY);
+  return path.startsWith("/") && !path.startsWith("//") ? path : "/";
 }

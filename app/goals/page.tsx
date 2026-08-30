@@ -1,18 +1,14 @@
 import PageShell from "@/components/PageShell";
-import GoalManager from "@/components/goals/GoalManager";
-import AffordabilityAnalyzer from "@/components/goals/AffordabilityAnalyzer";
+import BudgetAgentDashboard from "@/components/goals/BudgetAgentDashboard";
 
 export default function GoalsPage() {
   return (
     <PageShell
       active="My Goals"
-      title="Goals & Wallet"
-      subtitle="The Rupee Intelligence Engine — plan savings and check affordability before you buy."
+      title="My Goals & Budget Agent"
+      subtitle="Personal financial intelligence that matches high-trust deals to your goals and safe monthly budget."
     >
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_380px]">
-        <GoalManager />
-        <AffordabilityAnalyzer />
-      </div>
+      <BudgetAgentDashboard />
     </PageShell>
   );
 }

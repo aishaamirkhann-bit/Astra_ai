@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Wallet2, ArrowDownLeft, ArrowUpRight, Target, Loader2 } from "lucide-react";
+import { Wallet2, ArrowDownLeft, ArrowUpRight, Target, Loader2, Radio, Sparkles } from "lucide-react";
 import PageShell from "@/components/PageShell";
-import { getWallet, getGoals, topUpWallet, withdrawFromWallet } from "@/lib/api";
+import { getWallet, getGoals, getWalletWebSocketUrl, topUpWallet, withdrawFromWallet } from "@/lib/api";
 import type { WalletDetailOut, GoalOut } from "@/lib/types";
 
 export default function WalletPage() {
@@ -30,6 +30,17 @@ export default function WalletPage() {
       .catch(() => setError("Could not load wallet."))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (!wallet?.user_id) return;
+    const socket = new WebSocket(getWalletWebSocketUrl(wallet.user_id));
+    socket.onmessage = (message) => {
+      const event = JSON.parse(message.data) as { type?: string };
+      if (event.type === "balance_updated") void refresh();
+    };
+    const ping = window.setInterval(() => socket.readyState === WebSocket.OPEN && socket.send("ping"), 20000);
+    return () => { window.clearInterval(ping); socket.close(); };
+  }, [wallet?.user_id]);
 
   async function handleSubmit() {
     const value = Number(amount);
@@ -65,6 +76,7 @@ export default function WalletPage() {
             <p className="font-display text-3xl font-bold text-ink-100">
               {loading || !wallet ? "…" : wallet.available_balance_display}
             </p>
+            <div className="mt-3 flex items-center justify-between"><span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-emerald-400">PKR wallet</span><span className="flex items-center gap-1 text-[9px] text-emerald-400"><Radio className="h-3 w-3 animate-pulse" /> Live balance</span></div>
 
             {error && (
               <p className="mt-3 rounded-lg bg-signal-reject/10 px-3 py-2 text-xs font-medium text-signal-reject">
@@ -142,7 +154,7 @@ export default function WalletPage() {
               )}
             </div>
             <Link
-              href="/goals"
+              href="/my-goals"
               className="mt-4 inline-block text-[11px] font-medium text-ink-500 hover:text-ink-100"
             >
               Manage goals →
@@ -176,7 +188,7 @@ export default function WalletPage() {
                       )}
                     </div>
                     <div>
-                      <p className="text-xs font-medium text-ink-100">{t.label}</p>
+                      <div className="flex flex-wrap items-center gap-2"><p className="text-xs font-medium text-ink-100">{t.label}</p><span className={`rounded-full px-2 py-0.5 text-[8px] font-bold uppercase tracking-wider ${t.transaction_type === "Debit" ? "bg-rose-500/10 text-rose-400" : t.transaction_type === "Refund" ? "bg-cyan-500/10 text-cyan-400" : t.label.toLowerCase().includes("cashback") ? "bg-violet-500/10 text-violet-400" : "bg-emerald-500/10 text-emerald-400"}`}>{t.label.toLowerCase().includes("cashback") ? <span className="inline-flex items-center gap-1"><Sparkles className="h-2.5 w-2.5" /> AI Deal Cashback</span> : t.transaction_type}</span></div>
                       <p className="text-[10px] text-ink-500">
                         {new Date(t.created_at).toLocaleDateString(undefined, {
                           year: "numeric",

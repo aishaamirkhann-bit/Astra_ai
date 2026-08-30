@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -14,6 +14,7 @@ from app.core.database import SessionLocal, engine
 from app.data import PRODUCTS
 from app.models.deal import Deal, DealAuditLog, DealReservation, MarketPriceHistory, SellerMetric
 from app.models.product import Product
+from app.models.order import Order, OrderStatus
 from app.schemas.deal import (
     DealDetail,
     DealListResponse,
@@ -246,7 +247,11 @@ def _summary(deal: Deal, product: Product) -> DealSummary:
 
 
 def list_active_deals(db: Session, category: str | None, sort_by: str, page: int, page_size: int) -> DealListResponse:
-    query = select(Deal, Product).join(Product, Product.id == Deal.product_id).where(Deal.is_active.is_(True))
+    now = datetime.now(timezone.utc)
+    query = select(Deal, Product).join(Product, Product.id == Deal.product_id).where(
+        Deal.is_active.is_(True),
+        or_(Deal.deal_expires_at.is_(None), Deal.deal_expires_at > now),
+    )
     if category:
         catalog_categories = [key for key, value in CATEGORY_MAP.items() if value == category]
         query = query.where(Product.category.in_(catalog_categories))
@@ -268,9 +273,14 @@ def _variant_options(product: Product) -> tuple[list[str], list[str]]:
 
 
 def get_deal_details(db: Session, deal_id: str) -> DealDetail:
+    now = datetime.now(timezone.utc)
     row = db.execute(
         select(Deal, Product).join(Product, Product.id == Deal.product_id)
-        .where(Deal.id == deal_id, Deal.is_active.is_(True))
+        .where(
+            Deal.id == deal_id,
+            Deal.is_active.is_(True),
+            or_(Deal.deal_expires_at.is_(None), Deal.deal_expires_at > now),
+        )
     ).first()
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Active deal not found")
@@ -278,7 +288,7 @@ def get_deal_details(db: Session, deal_id: str) -> DealDetail:
     history = db.scalars(
         select(MarketPriceHistory).where(
             MarketPriceHistory.product_id == product.id,
-            MarketPriceHistory.observed_at >= datetime.now(timezone.utc) - timedelta(days=30),
+            MarketPriceHistory.observed_at >= now - timedelta(days=30),
         ).order_by(MarketPriceHistory.observed_at)
     ).all()
     sizes, colors = _variant_options(product)
@@ -301,7 +311,7 @@ def get_deal_details(db: Session, deal_id: str) -> DealDetail:
     )
 
 
-def reserve_deal(deal_id: str, payload: ReserveDealRequest) -> tuple[DealReservationResponse, DealDomainEvent]:
+def reserve_deal(deal_id: str, payload: ReserveDealRequest, user_id: int) -> tuple[DealReservationResponse, DealDomainEvent]:
     """Reserve inventory under a row lock; no stock can fall below zero."""
     db = SessionLocal()
     try:
@@ -322,11 +332,21 @@ def reserve_deal(deal_id: str, payload: ReserveDealRequest) -> tuple[DealReserva
         product.stock_count -= payload.quantity
         deal.stock_remaining = product.stock_count
         reservation = DealReservation(
-            deal_id=deal.id, quantity=payload.quantity,
+            deal_id=deal.id, user_id=user_id, quantity=payload.quantity,
+            size=payload.size or "", color=payload.color or "",
             expires_at=now + timedelta(minutes=settings.DEAL_RESERVATION_MINUTES),
         )
         db.add(reservation)
         db.flush()
+        order = Order(
+            order_ref=f"ORD-{reservation.id[:8].upper()}", user_id=user_id,
+            product_id=product.id, reservation_id=reservation.id,
+            quantity=payload.quantity, size=payload.size or "", color=payload.color or "",
+            price=deal.listing_price * payload.quantity,
+            status=OrderStatus.PENDING_APPROVAL,
+            approval_deadline=reservation.expires_at,
+        )
+        db.add(order)
         db.add(DealAuditLog(
             deal_id=deal.id, product_id=product.id, event_type="stock_changed", decision="reserved",
             reasoning={"reservation_id": reservation.id, "quantity": payload.quantity, "stock_remaining": product.stock_count, "lock": "redis_distributed_lock + database_row_lock"},
@@ -337,6 +357,7 @@ def reserve_deal(deal_id: str, payload: ReserveDealRequest) -> tuple[DealReserva
         response = DealReservationResponse(
             reservation_id=reservation.id, deal_id=deal.id, status="reserved", quantity=payload.quantity,
             stock_remaining=product.stock_count, expires_at=_as_utc(reservation.expires_at).isoformat(),
+            order_ref=order.order_ref,
             message="Stock reserved. Complete approval before the reservation expires.",
         )
         event = DealDomainEvent("deal_expired" if product.stock_count == 0 else "stock_changed", deal.id, product.id, product.stock_count)
@@ -375,6 +396,9 @@ def release_expired_reservations(db: Session) -> list[DealDomainEvent]:
         if not deal.deal_expires_at or _as_utc(deal.deal_expires_at) > now:
             deal.is_active = True
         reservation.status = "expired"
+        order = db.scalar(select(Order).where(Order.reservation_id == reservation.id))
+        if order and order.status == OrderStatus.PENDING_APPROVAL:
+            order.status = OrderStatus.CANCELLED
         db.add(DealAuditLog(
             deal_id=deal.id, product_id=product.id, event_type="stock_changed", decision="reservation_released",
             reasoning={"reservation_id": reservation.id, "quantity_restored": reservation.quantity, "stock_remaining": product.stock_count},
@@ -382,3 +406,16 @@ def release_expired_reservations(db: Session) -> list[DealDomainEvent]:
         events.append(DealDomainEvent("stock_changed", deal.id, product.id, product.stock_count))
     db.commit()
     return events
+
+
+def finalize_reversal_orders(db: Session) -> None:
+    """Confirm approved orders once their reversible checkout window closes."""
+    now = datetime.now(timezone.utc)
+    orders = db.scalars(select(Order).where(
+        Order.status == OrderStatus.REVERSAL_WINDOW_OPEN,
+        Order.reversal_deadline <= now,
+    )).all()
+    for order in orders:
+        order.status = OrderStatus.CONFIRMED
+    if orders:
+        db.commit()

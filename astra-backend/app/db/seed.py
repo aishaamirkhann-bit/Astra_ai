@@ -118,12 +118,12 @@ def seed():
         db.add(wallet)
         db.flush()
         db.add_all([
-            WalletLedgerEntry(wallet_id=wallet.id, label="Weekly contribution — Laptop Goal",
-                               amount=8000, entry_type="credit"),
-            WalletLedgerEntry(wallet_id=wallet.id, label="Purchase — Apple Watch Series 9",
-                               amount=-134999, entry_type="debit"),
-            WalletLedgerEntry(wallet_id=wallet.id, label="Wallet top-up",
-                               amount=200000, entry_type="credit"),
+            WalletLedgerEntry(wallet_id=wallet.id, description="Weekly contribution - Laptop Goal",
+                               amount=8000, txn_type="Credit"),
+            WalletLedgerEntry(wallet_id=wallet.id, description="Purchase - Apple Watch Series 9",
+                               amount=134999, txn_type="Debit"),
+            WalletLedgerEntry(wallet_id=wallet.id, description="Wallet top-up",
+                               amount=200000, txn_type="Credit"),
         ])
 
         # --- Goal ---
