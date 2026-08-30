@@ -31,7 +31,15 @@ export default function ExploreClient({
   const [budgetMode, setBudgetMode] = useState(false);
   const [walletBalance, setWalletBalance] = useState<number | null>(initialWalletBalance ?? null);
   const [retryKey, setRetryKey] = useState(0);
+  const [knownTags, setKnownTags] = useState<string[]>([]);
   const [searchContext, setSearchContext] = useState<{ mode: "voice" | "image"; label: string; previewUrl?: string } | null>(null);
+
+  useEffect(() => {
+    if (knownTags.length === 0 && products.length > 0) {
+      const tags = Array.from(new Set(products.flatMap((product) => product.semantic_tags))).slice(0, 10);
+      if (tags.length > 0) setKnownTags(tags);
+    }
+  }, [products, knownTags]);
 
   useEffect(() => {
     const loadWalletBalance = async () => {
@@ -211,10 +219,23 @@ export default function ExploreClient({
           onMinPriceChange={(value) => { setBudgetMode(false); setMinPrice(value); }}
           activeTags={semanticTags}
           onTagsChange={(value) => { setBudgetMode(false); setSemanticTags(value); }}
+          tags={knownTags}
         />
         <div>
           {error && <div className="mb-3 flex flex-col gap-3 rounded-xl border border-signal-reject/30 bg-signal-reject/10 p-4 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs text-signal-reject">{error}</p><button type="button" onClick={() => { if (budgetMode) void checkBudget(); else setRetryKey((value) => value + 1); }} className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-signal-reject/30 px-3 py-1.5 text-xs font-medium text-signal-reject transition hover:bg-signal-reject/10"><RefreshCw className="h-3.5 w-3.5" /> Retry</button></div>}
-          <HybridResultsGrid products={products} totalResults={totalResults} sortBy={sortBy} onSortChange={(value) => { setBudgetMode(false); setSortBy(value); }} loading={loading} />
+          <HybridResultsGrid
+            products={products}
+            totalResults={totalResults}
+            sortBy={sortBy}
+            onSortChange={(value) => { setBudgetMode(false); setSortBy(value); }}
+            loading={loading}
+            onTagSelect={(tag) => {
+              setBudgetMode(false);
+              setSemanticTags((current) =>
+                current.some((item) => item.toLowerCase() === tag.toLowerCase()) ? current : [...current, tag],
+              );
+            }}
+          />
         </div>
       </div>
     </>

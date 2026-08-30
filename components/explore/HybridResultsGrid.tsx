@@ -25,12 +25,14 @@ export default function HybridResultsGrid({
   sortBy,
   onSortChange,
   loading,
+  onTagSelect,
 }: {
   products: ExploreProduct[];
   totalResults: number;
   sortBy: string;
   onSortChange: (value: string) => void;
   loading: boolean;
+  onTagSelect?: (tag: string) => void;
 }) {
   const [savedIds, setSavedIds] = useState<string[]>([]);
   const [compareIds, setCompareIds] = useState<string[]>([]);
@@ -112,7 +114,23 @@ export default function HybridResultsGrid({
                   {p.is_verified_seller ? "Verified" : ""}
                 </div>
               </div>
-              <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-ink-500"><span>{p.semantic_tags.includes("Fast delivery") ? "Fast delivery" : "Delivery options"}</span><span className="font-medium text-signal-good">{p.trust}% trust</span></div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                {p.semantic_tags.slice(0, 3).map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      onTagSelect?.(tag);
+                    }}
+                    aria-label={`Filter by ${tag}`}
+                    className="rounded-full border border-base-600 px-1.5 py-0.5 text-[9px] text-ink-500 transition hover:border-astra-violet/50 hover:text-ink-100"
+                  >
+                    {tag}
+                  </button>
+                ))}
+                <span className="ml-auto text-[10px] font-medium text-signal-good">{p.trust}% trust</span>
+              </div>
               <p className="mt-1 font-display text-sm font-semibold text-ink-100">{p.formatted_price}</p>
               <p className="truncate text-[10px] text-ink-500">{p.seller_name} · {p.total_reviews.toLocaleString()} reviews</p>
               <button type="button" onClick={(event) => { event.preventDefault(); toggleCompare(p.id); }} className={["mt-3 inline-flex items-center gap-1 text-[10px] font-medium transition", compareIds.includes(p.id) ? "text-astra-cyan" : "text-ink-500 hover:text-ink-100"].join(" ")}><Scale className="h-3 w-3" /> {compareIds.includes(p.id) ? "Added to compare" : "Compare"}</button>

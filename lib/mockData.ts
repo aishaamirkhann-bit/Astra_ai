@@ -221,69 +221,10 @@ export const ORDERS = [
   },
 ] as const;
 
-export const AUDIT_LOG = [
-  {
-    id: "EVT-4471",
-    type: "consent.evaluate",
-    endpoint: "/api/v1/consent/evaluate",
-    verdict: "approve",
-    actor: "orchestrator-agent",
-    time: "14:02:11.203",
-  },
-  {
-    id: "EVT-4470",
-    type: "human.approval",
-    endpoint: "/api/v1/approval/confirm",
-    verdict: "approved",
-    actor: "user:aisha.k",
-    time: "14:01:58.010",
-  },
-  {
-    id: "EVT-4469",
-    type: "trust.score",
-    endpoint: "/api/v1/trust/evaluate",
-    verdict: "hold",
-    actor: "trust-engine",
-    time: "14:01:44.876",
-  },
-  {
-    id: "EVT-4468",
-    type: "consent.evaluate",
-    endpoint: "/api/v1/consent/evaluate",
-    verdict: "reject",
-    actor: "orchestrator-agent",
-    time: "13:57:02.512",
-  },
-] as const;
-
 export const WALLET_LEDGER = [
   { id: "TXN-9012", label: "Weekly contribution — Laptop Goal", amount: 8000, type: "credit", date: "Aug 14, 2026" },
   { id: "TXN-9011", label: "Purchase — Apple Watch Series 9", amount: -134999, type: "debit", date: "Aug 10, 2026" },
   { id: "TXN-9010", label: "Wallet top-up", amount: 200000, type: "credit", date: "Aug 5, 2026" },
   { id: "TXN-9009", label: "Weekly contribution — Umrah Fund", amount: 25000, type: "credit", date: "Aug 1, 2026" },
   { id: "TXN-9008", label: "Purchase — Anker Soundcore Q45", amount: -24999, type: "debit", date: "Jul 27, 2026" },
-] as const;
-
-export const VOICE_HISTORY = [
-  {
-    id: "conv-1",
-    time: "Today, 2:02 PM",
-    you: "ASTRA, laptop 150k ke under dikhao",
-    astra:
-      "Found 3 laptops under Rs. 150,000 that fit your budget — the Lenovo IdeaPad Slim 5 is the best-rated verified option.",
-  },
-  {
-    id: "conv-2",
-    time: "Today, 11:40 AM",
-    you: "Is this seller trustworthy?",
-    astra:
-      "TechBazaar Official has a 96% trust score with 4.8★ average across 2,300+ verified orders — no red flags on file.",
-  },
-  {
-    id: "conv-3",
-    time: "Yesterday, 6:15 PM",
-    you: "Mera budget check karo",
-    astra:
-      "Rs. 135,000 available to spend this month, with your Laptop Goal 25% funded. You're within your weekly spend cap.",
-  },
 ] as const;

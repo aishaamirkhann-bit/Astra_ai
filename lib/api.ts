@@ -27,6 +27,8 @@ import type {
   Cart,
   CartCheckout,
   ChatConversation,
+  AuditEntry,
+  B2bEvaluation,
 } from "@/lib/types";
 // Set in .env.local — see lib/api.ts usage below.
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -207,6 +209,12 @@ export function getOrders(cookieHeader?: string): Promise<OrderOut[]> {
 
 export function getOrderDetail(orderRef: string): Promise<OrderDetail> { return apiFetch<OrderDetail>(`/orders/${orderRef}`); }
 export function reorderItem(orderRef: string): Promise<{ order_ref: string; cart_total_quantity: number; message: string }> { return apiFetch(`/orders/${orderRef}/reorder`, { method: "POST" }); }
+export function getOrdersAudit(cookieHeader?: string): Promise<AuditEntry[]> { return apiFetch<AuditEntry[]>("/orders/audit", undefined, cookieHeader); }
+
+/** B2B Adapter playground — real deterministic verdict from the backend. */
+export function evaluateB2bPayload(payload: Record<string, unknown>): Promise<B2bEvaluation> {
+  return apiFetch<B2bEvaluation>("/b2b/evaluate", { method: "POST", body: JSON.stringify(payload) });
+}
 
 export function getNotifications(): Promise<NotificationList> { return apiFetch<NotificationList>("/notifications"); }
 export function markNotificationRead(id: string): Promise<void> { return apiFetch<void>(`/notifications/${id}/read`, { method: "POST" }); }

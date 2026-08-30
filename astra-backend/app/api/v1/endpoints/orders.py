@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_db
 from app.api.v1.endpoints.approval import _release_order_reservation
 from app.models.order import Order, OrderStatus
+from app.models.pipeline import AuditLog
 from app.models.user import User
 from app.models.cart import CartItem
 from app.models.notification import Notification
@@ -15,6 +16,7 @@ from app.models.budget import UserBudget
 from app.models.wallet import UserWallet, WalletTransaction
 from app.realtime.wallet_ws import manager as wallet_events
 from app.schemas.order import OrderDetailOut, OrderOut, ReorderResponse, ReverseOrderResponse
+from app.services.audit import record_audit
 from app.utils.helpers import as_aware_utc
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
@@ -25,6 +27,22 @@ def _seconds_left(order: Order) -> int:
     if not deadline:
         return 0
     return max(0, int((as_aware_utc(deadline) - datetime.now(timezone.utc)).total_seconds()))
+
+
+@router.get("/audit")
+def audit_trail(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    entries = db.query(AuditLog).order_by(AuditLog.id.desc()).limit(30).all()
+    return [
+        {
+            "id": entry.event_ref,
+            "type": entry.event_type,
+            "endpoint": entry.endpoint,
+            "actor": entry.actor,
+            "verdict": entry.verdict,
+            "time": as_aware_utc(entry.created_at).isoformat() if entry.created_at else None,
+        }
+        for entry in entries
+    ]
 
 
 @router.get("", response_model=list[OrderOut])
@@ -76,6 +94,13 @@ async def reverse_order(order_ref: str, db: Session = Depends(get_db), current_u
             budget.current_spent = max(0, budget.current_spent - order.price)
     order.status = OrderStatus.CANCELLED
     db.add(Notification(user_id=current_user.id, message=f"{order.order_ref} was reversed and refunded."))
+    record_audit(
+        db,
+        event_type="order.reversal",
+        endpoint=f"/api/v1/orders/{order.order_ref}/reverse",
+        verdict="cancelled",
+        actor=f"user:{current_user.email}",
+    )
     db.commit()
     if debit and not refund:
         await wallet_events.balance_updated(current_user.id, wallet.available_balance, "Refund")

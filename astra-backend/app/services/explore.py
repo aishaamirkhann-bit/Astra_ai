@@ -111,7 +111,7 @@ def hybrid_vector_search(query: str, request: ExploreSearchRequest) -> list[dict
     """Combine lexical overlap with a deterministic semantic proxy, then apply strict filters."""
     normalized, inferred_budget, inferred_tags = parse_query_intent(query)
     max_price = min(request.max_price, inferred_budget) if inferred_budget else request.max_price
-    requested_tags = set(request.semantic_tags) | set(inferred_tags)
+    requested_tags = {tag.strip().lower() for tag in request.semantic_tags if tag.strip()} | {tag.lower() for tag in inferred_tags}
     category = request.category.lower()
 
     candidates = []
@@ -120,10 +120,11 @@ def hybrid_vector_search(query: str, request: ExploreSearchRequest) -> list[dict
             continue
         if not request.min_price <= product["price"] <= max_price:
             continue
-        if requested_tags and not requested_tags.issubset(set(product["semantic_tags"])):
+        product_tags = {tag.strip().lower() for tag in product["semantic_tags"]}
+        if requested_tags and not requested_tags.issubset(product_tags):
             continue
         lexical = _keyword_score(normalized, product)
-        tag_match = bool(requested_tags.intersection(product["semantic_tags"]))
+        tag_match = bool(requested_tags.intersection(product_tags))
         if normalized.strip() and lexical == 0 and not tag_match:
             continue
         candidates.append((lexical * 0.7 + (0.2 if tag_match else 0) + product["rating"] / 100, product))

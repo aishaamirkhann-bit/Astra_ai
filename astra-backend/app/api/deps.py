@@ -25,26 +25,12 @@ def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    # DEV CONVENIENCE: agar frontend abhi token nahi bhej raha (Home page
-    # demo/local dev), to hum seeded demo user "Aisha" wapas kar dete hain.
-    # Production me yeh fallback hata dena — sirf valid JWT accept hoga.
     token = token or request.cookies.get(settings.AUTH_COOKIE_NAME)
     if token is None:
-        if settings.APP_ENV == "production":
-            # The demo-user fallback is a dev convenience only — never allow
-            # unauthenticated requests to silently become "Aisha" in prod.
-            raise credentials_error
-        demo_user = db.query(User).filter(User.email == "aisha@astra.ai").first()
-        if demo_user:
-            return demo_user
         raise credentials_error
 
     payload = decode_access_token(token)
     if payload is None:
-        if settings.APP_ENV != "production":
-            demo_user = db.query(User).filter(User.email == "aisha@astra.ai").first()
-            if demo_user:
-                return demo_user
         raise credentials_error
 
     user_id = payload.get("sub")
@@ -53,10 +39,6 @@ def get_current_user(
     except (TypeError, ValueError):
         user = None
     if user is None:
-        if settings.APP_ENV != "production":
-            demo_user = db.query(User).filter(User.email == "aisha@astra.ai").first()
-            if demo_user:
-                return demo_user
         raise credentials_error
     return user
 
