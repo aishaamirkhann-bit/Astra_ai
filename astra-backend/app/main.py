@@ -25,20 +25,48 @@ from app.core.rate_limit import SensitiveEndpointRateLimitMiddleware
 # Import models so Base.metadata knows about every table before create_all runs.
 import app.models  # noqa: F401
 
-# TestClient and some WSGI probes do not enter lifespan; keep local SQLite
-# structurally current at import time. This is a no-op for PostgreSQL.
-apply_sqlite_compatibility_migrations(engine)
-Base.metadata.create_all(bind=engine)
-migrate_legacy_wallet_data(engine)
+
+def _bootstrap_schema() -> None:
+    """Single migration entrypoint.
+
+    SQLite (local dev/tests): convenience path that keeps the demo database
+    structurally current without Alembic.
+    PostgreSQL (production): Alembic is the only schema authority — startup
+    fails fast unless the database is already at the latest revision.
+    """
+    if engine.dialect.name == "sqlite":
+        apply_sqlite_compatibility_migrations(engine)
+        Base.metadata.create_all(bind=engine)
+        migrate_legacy_wallet_data(engine)
+        return
+
+    from pathlib import Path
+
+    from alembic.config import Config
+    from alembic.runtime.migration import MigrationContext
+    from alembic.script import ScriptDirectory
+
+    backend_root = Path(__file__).resolve().parents[1]
+    alembic_cfg = Config(str(backend_root / "alembic.ini"))
+    alembic_cfg.set_main_option("script_location", str(backend_root / "alembic"))
+    head = ScriptDirectory.from_config(alembic_cfg).get_current_head()
+    with engine.connect() as connection:
+        current = MigrationContext.configure(connection).get_current_revision()
+    if current != head:
+        raise RuntimeError(
+            f"Database schema is at Alembic revision {current or '(none)'} but this deployment expects {head}. "
+            "Run `alembic upgrade head` before starting the API."
+        )
+
+
+# TestClient and some WSGI probes do not enter lifespan; keep the schema
+# check/current at import time as well.
+_bootstrap_schema()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Dev convenience — creates tables if they don't exist yet.
-    # In production, use Alembic migrations instead (see README).
-    apply_sqlite_compatibility_migrations(engine)
-    Base.metadata.create_all(bind=engine)
-    migrate_legacy_wallet_data(engine)
+    _bootstrap_schema()
 
     def initialize_deals() -> list:
         db = SessionLocal()
