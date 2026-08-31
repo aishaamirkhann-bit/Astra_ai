@@ -14,6 +14,7 @@ from app.models.cart import CartItem
 from app.models.trust import PlatformTrustMetric, SellerVerification, TrustAuditLog
 from app.models.budget import BudgetAlert, ShoppingGoal, UserBudget
 from app.models.chat import ChatConversation, ChatMessage
+from app.models.messaging import DirectMessage, SellerConversation
 
 __all__ = [
     "User",
@@ -44,4 +45,6 @@ __all__ = [
     "SellerMetric",
     "ChatConversation",
     "ChatMessage",
+    "SellerConversation",
+    "DirectMessage",
 ]

@@ -15,6 +15,7 @@ from app.realtime.pipeline_ws import router as pipeline_ws_router
 from app.realtime.deals_ws import router as deals_ws_router
 from app.realtime.wallet_ws import router as wallet_ws_router
 from app.realtime.notifications_ws import router as notifications_ws_router, manager as notification_manager
+from app.realtime.messaging_ws import router as messaging_ws_router
 from app.db.runtime_migrations import apply_sqlite_compatibility_migrations, migrate_legacy_wallet_data
 from app.services.deal_events import deal_event_bus
 from app.services.deals_pipeline import bootstrap_deals_data, evaluate_deals, finalize_reversal_orders, release_expired_reservations
@@ -130,6 +131,7 @@ app.include_router(pipeline_ws_router)
 app.include_router(deals_ws_router)
 app.include_router(wallet_ws_router)
 app.include_router(notifications_ws_router)
+app.include_router(messaging_ws_router)
 
 
 @app.get("/health")

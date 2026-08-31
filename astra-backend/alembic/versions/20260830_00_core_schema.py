@@ -9,7 +9,7 @@ down_revision = None
 branch_labels = None
 depends_on = None
 
-MIGRATED_TABLES = {"user_wallets", "wallet_transactions", "financial_consent_logs", "chat_conversations", "chat_messages"}
+MIGRATED_TABLES = {"user_wallets", "wallet_transactions", "financial_consent_logs", "chat_conversations", "chat_messages", "seller_conversations", "direct_messages"}
 
 
 def upgrade() -> None:

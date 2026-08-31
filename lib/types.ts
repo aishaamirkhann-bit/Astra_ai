@@ -409,3 +409,25 @@ export interface B2bEvaluation {
   evaluated_at: string;
   checks: B2bConsentCheck[];
 }
+
+/** Seller-buyer direct messaging. */
+export interface DirectConversation {
+  id: number;
+  other_id: number;
+  other_name: string;
+  other_role: string;
+  product_id: string | null;
+  product_title: string | null;
+  last_message: string | null;
+  last_message_at: string | null;
+  created_at: string | null;
+}
+
+export interface DirectMessageOut {
+  id: number;
+  conversation_id: number;
+  sender_id: number;
+  sender_name: string;
+  content: string;
+  created_at: string | null;
+}

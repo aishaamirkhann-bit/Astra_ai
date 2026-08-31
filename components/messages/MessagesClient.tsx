@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Plus, Send, ShieldHalf } from "lucide-react";
+import { Mic, Plus, Send, ShieldHalf, Square } from "lucide-react";
 import { getChatHistory, streamChat } from "@/lib/api";
+import { useSpeechRecognition } from "@/lib/useSpeechRecognition";
 import type { ChatConversation, ChatMessage } from "@/lib/types";
 
 export default function MessagesClient() {
@@ -16,6 +17,10 @@ export default function MessagesClient() {
   const [streamingText, setStreamingText] = useState<string | null>(null);
   const [pendingUserText, setPendingUserText] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  const { listening, interim, start: startVoice, stop: stopVoice } = useSpeechRecognition({
+    onFinal: (text) => setDraft((current) => (current ? `${current} ${text}` : text)),
+  });
 
   const active = useMemo(
     () => conversations.find((conversation) => conversation.id === activeId) ?? null,
@@ -202,6 +207,17 @@ export default function MessagesClient() {
         {error && <p className="mt-3 text-xs text-signal-reject">{error}</p>}
 
         <div className="mt-5 flex items-center gap-2 border-t border-base-600 pt-4">
+          <button
+            aria-label={listening ? "Stop dictation" : "Speak to ASTRA"}
+            aria-pressed={listening}
+            onClick={() => (listening ? stopVoice() : startVoice())}
+            className={[
+              "grid h-10 w-10 shrink-0 place-items-center rounded-full transition",
+              listening ? "bg-astra-gradient text-white" : "bg-base-800 text-ink-300 hover:text-ink-100",
+            ].join(" ")}
+          >
+            {listening ? <Square className="h-3.5 w-3.5" /> : <Mic className="h-4 w-4" />}
+          </button>
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -211,7 +227,7 @@ export default function MessagesClient() {
                 void send();
               }
             }}
-            placeholder="Type a message to ASTRA…"
+            placeholder={listening ? interim || "Listening…" : "Type a message to ASTRA…"}
             className="flex-1 rounded-full border border-base-600 bg-base-800/60 px-4 py-2.5 text-sm text-ink-100 placeholder:text-ink-700 focus:outline-none"
           />
           <button
