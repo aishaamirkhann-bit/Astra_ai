@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import GlobalVoiceFab from "@/components/GlobalVoiceFab";
+import Toaster from "@/components/Toaster";
 
 export const metadata: Metadata = {
   title: "ASTRA AI — Shop Smarter. Spend Safer.",
@@ -15,6 +16,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ThemeProvider>
           {children}
           <GlobalVoiceFab />
+          <Toaster />
         </ThemeProvider>
       </body>
     </html>

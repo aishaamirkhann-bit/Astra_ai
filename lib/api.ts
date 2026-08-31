@@ -29,6 +29,8 @@ import type {
   ChatConversation,
   AuditEntry,
   B2bEvaluation,
+  DirectConversation,
+  DirectMessageOut,
 } from "@/lib/types";
 // Set in .env.local — see lib/api.ts usage below.
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -194,6 +196,30 @@ export function removeCartItem(itemId: number): Promise<Cart> { return apiFetch<
 export function checkoutCart(payload: { shipping_address: string; consent_id?: string }): Promise<CartCheckout> { return apiFetch<CartCheckout>("/cart/checkout", { method: "POST", body: JSON.stringify(payload) }); }
 export function getChatHistory(): Promise<ChatConversation[]> { return apiFetch<ChatConversation[]>("/chat/history"); }
 export function streamChat(payload: { message: string; conversation_id?: number }): Promise<Response> { return fetch(`${API_URL}/api/v1/chat/stream`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); }
+
+// ---------------------------------------------------------------------------
+// Seller-Buyer direct messaging
+// ---------------------------------------------------------------------------
+
+export function getDirectConversations(cookieHeader?: string): Promise<DirectConversation[]> {
+  return apiFetch<DirectConversation[]>("/messaging/conversations", undefined, cookieHeader);
+}
+
+export function openSellerConversation(productId: string): Promise<DirectConversation> {
+  return apiFetch<DirectConversation>("/messaging/conversations", { method: "POST", body: JSON.stringify({ product_id: productId }) });
+}
+
+export function getDirectMessages(conversationId: number): Promise<DirectMessageOut[]> {
+  return apiFetch<DirectMessageOut[]>(`/messaging/conversations/${conversationId}/messages`);
+}
+
+export function sendDirectMessage(conversationId: number, content: string): Promise<DirectMessageOut> {
+  return apiFetch<DirectMessageOut>(`/messaging/conversations/${conversationId}/messages`, { method: "POST", body: JSON.stringify({ content }) });
+}
+
+export function getMessagingWebSocketUrl(conversationId: number): string {
+  return `${API_URL.replace(/^http/, "ws")}/ws/messages/${conversationId}`;
+}
 
 export function authorizeFinancialConsent(payload: { amount: number; auth_method: "Voice" | "OTP"; order_ref: string; voice_transcript?: string; consent_id?: string; otp_code?: string }): Promise<ConsentAuthorizationResponse> {
   return apiFetch<ConsentAuthorizationResponse>("/wallet/authorize-consent", { method: "POST", body: JSON.stringify(payload) });

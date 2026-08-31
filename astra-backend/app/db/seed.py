@@ -101,17 +101,23 @@ def seed():
         db.add(user)
         db.flush()
 
-        # A second demo account so seller-only endpoints/UI can be tested too.
-        seller = User(
-            name="Demo Seller",
-            email="seller@astra.ai",
-            hashed_password=hash_password("demo1234"),
-            preferred_language="Roman Urdu",
-            role="seller",
-        )
-        db.add(seller)
-        db.flush()
-        db.add(Wallet(user_id=seller.id, available_balance=0))
+        # One seller account per distinct product seller so buyer<->seller
+        # messaging can resolve products to real users (matched by name).
+        seller_emails: dict[str, str] = {}
+        for index, seller_name in enumerate(dict.fromkeys(p["seller_name"] for p in PRODUCTS_SEED)):
+            slug = seller_name.lower().replace(" ", "-").replace("&", "and")
+            email = "seller@astra.ai" if index == 0 else f"{slug}@astra.ai"
+            seller_emails[seller_name] = email
+            seller = User(
+                name=seller_name,
+                email=email,
+                hashed_password=hash_password("demo1234"),
+                preferred_language="Roman Urdu",
+                role="seller",
+            )
+            db.add(seller)
+            db.flush()
+            db.add(Wallet(user_id=seller.id, available_balance=0))
 
         # --- Wallet + ledger ---
         wallet = Wallet(user_id=user.id, available_balance=135000)
@@ -153,7 +159,8 @@ def seed():
         db.commit()
         print("Seed complete.")
         print("Demo buyer login:  aisha@astra.ai / demo1234")
-        print("Demo seller login: seller@astra.ai / demo1234")
+        for seller_name, email in seller_emails.items():
+            print(f"Demo seller login ({seller_name}): {email} / demo1234")
         print("Both now require an emailed OTP after the password step (see /auth/login -> /auth/verify-otp).")
     finally:
         db.close()

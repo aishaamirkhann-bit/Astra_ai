@@ -1,70 +1,22 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { Mic, X, ArrowUpRight } from "lucide-react";
+import { useSpeechRecognition } from "@/lib/useSpeechRecognition";
 
 const BAR_HEIGHTS = [6, 16, 24, 12, 20, 8];
 
-type SpeechRecognitionLike = {
-  lang: string;
-  interimResults: boolean;
-  continuous: boolean;
-  start: () => void;
-  stop: () => void;
-  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
-  onend: (() => void) | null;
-  onerror: (() => void) | null;
-};
-
-type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
-
 export default function GlobalVoiceFab() {
   const [open, setOpen] = useState(false);
-  const [listening, setListening] = useState(false);
-  const [transcript, setTranscript] = useState("");
-  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const [lastTranscript, setLastTranscript] = useState("");
 
-  const toggleListening = () => {
-    if (listening && recognitionRef.current) {
-      recognitionRef.current.stop();
-      return;
-    }
-    const speechWindow = window as Window & { SpeechRecognition?: SpeechRecognitionConstructor; webkitSpeechRecognition?: SpeechRecognitionConstructor };
-    const SpeechRecognition = speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setTranscript("Use Chrome or Edge for voice search");
-      return;
-    }
-    const recognition = new SpeechRecognition();
-    recognition.lang = "en-US";
-    recognition.interimResults = false;
-    recognition.continuous = false;
-    recognition.onresult = (event) => {
-      const value = event.results[0][0].transcript;
-      setTranscript(value);
-      window.dispatchEvent(new CustomEvent("astra:search", { detail: { query: value, commit: true } }));
-    };
-    recognition.onend = () => {
-      setListening(false);
-      recognitionRef.current = null;
-    };
-    recognition.onerror = () => {
-      setListening(false);
-      recognitionRef.current = null;
-      setTranscript("Voice search could not hear that");
-    };
-    recognitionRef.current = recognition;
-    setTranscript("");
-    setListening(true);
-    try {
-      recognition.start();
-    } catch {
-      setListening(false);
-      recognitionRef.current = null;
-      setTranscript("Microphone permission required. Allow and try again.");
-    }
-  };
+  const { listening, interim, start, stop } = useSpeechRecognition({
+    onFinal: (text) => {
+      setLastTranscript(text);
+      window.dispatchEvent(new CustomEvent("astra:search", { detail: { query: text, commit: true } }));
+    },
+  });
 
   return (
     <div className="fixed bottom-5 right-5 z-40 flex flex-col items-end gap-3">
@@ -82,7 +34,7 @@ export default function GlobalVoiceFab() {
           </div>
 
           <button
-            onClick={toggleListening}
+            onClick={() => (listening ? stop() : start())}
             aria-pressed={listening}
             aria-label={listening ? "Stop voice search" : "Start voice search"}
             className={[
@@ -103,8 +55,8 @@ export default function GlobalVoiceFab() {
             ))}
           </div>
 
-          <p className="mt-2 text-center text-[11px] text-ink-300">
-            {listening ? "Sun rahe hain..." : transcript || "Bolo, ASTRA suney ga"}
+          <p className="mt-2 min-h-8 text-center text-[11px] text-ink-300">
+            {listening ? interim || "Sun rahe hain..." : lastTranscript || "Bolo, ASTRA suney ga"}
           </p>
 
           <Link
