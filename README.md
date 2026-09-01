@@ -52,11 +52,11 @@ so switching is instant and covers every page automatically.
 
 ## Images
 
-Product and category photos are real photographs pulled from Picsum
-(`https://picsum.photos/seed/<slug>/...`), seeded per item so each product
-always shows the same photo. Brand marketing photography wasn't hotlinked
-directly to avoid copyright/trademark issues — swap in your own product
-photography or a licensed CDN when you have real listings.
+Product and category photos are real photographs stored locally in
+`public/images/products/` and referenced as `/images/products/<file>.jpg` by
+the backend seed data — no external image CDN is required. New seller listings
+without a photo fall back to `public/images/products/default-product.png`.
+Swap in your own product photography when you have real listings.
 
 ## Structure
 
@@ -105,13 +105,48 @@ Tokens live in `tailwind.config.ts`, values in `app/globals.css`:
   live states and verdicts, never used decoratively
 - `.glass` / `.glass-hover` — the glassmorphism surface used by every card
 
-## Notes / next steps
+## Notes
 
-- Wallet balance, goals, orders, audit entries, and voice history in
-  `lib/mockData.ts` are placeholders — connect to your FastAPI backend
-  endpoints (`/api/v1/consent/evaluate`, wallet, goals, orders) to replace them.
-- `components/b2b/PayloadSimulator.tsx` picks a random verdict client-side for
-  demo purposes — point it at the real adapter endpoint when ready.
-- Explore's semantic tag chips are currently cosmetic; wire them into
-  `ExploreClient`'s filter logic the same way category and price are wired if
-  you want them to actually narrow results.
+Core home, catalog, deals, goals, wallet, orders, B2B, chat, notifications and
+seller-dashboard flows call the FastAPI backend. `lib/mockData.ts` remains only
+for static category/tag presentation data. Semantic search filters are handled
+by `/api/v1/explore/search`.
+
+## Current development architecture (August 2026)
+
+The frontend now contains buyer and seller experiences. Canonical routes include
+`/`, `/explore`, `/categories`, `/deals`, `/product/[slug]`, `/goals`, `/wallet`,
+`/orders`, `/messages`, `/notifications`, `/astra-check`, `/b2b`, and
+`/seller/dashboard`. The legacy `/my-goals` URL permanently redirects to `/goals`.
+
+Set `NEXT_PUBLIC_API_URL=http://localhost:8000` in `.env.local`. Authentication
+uses an HttpOnly cookie set after password plus email OTP verification.
+
+### Voice search / STT
+
+`lib/useSpeechRecognition.ts` wraps the browser Web Speech API and supports both
+`SpeechRecognition` and Chrome's `webkitSpeechRecognition`. Recognition is
+performed by the browser; availability and language quality depend on the browser
+and operating system. Uploaded audio can instead use backend `POST /api/v1/chat/stt`.
+
+### Vector search status
+
+Production catalog vectors are stored in PostgreSQL/pgvector (`vector(1536)` with
+an HNSW cosine index). FAISS and Sentence-Transformers are not runtime dependencies
+in this repository today. For an optional offline index, install
+`faiss-cpu sentence-transformers`, encode catalog text with a selected model, and
+keep model name/dimension alongside the index. Do not mix those vectors with the
+1536-dimensional pgvector column unless their dimensions and embedding model match.
+
+### Playwright E2E
+
+The Chromium suite covers OTP login, product negotiation, and escrow dispute:
+
+```powershell
+npx playwright install chromium
+npx playwright test
+npx playwright show-report
+```
+
+`playwright.config.ts` starts the API and Next.js dev server when they are not
+already running. Failure screenshots, videos, and traces are retained.

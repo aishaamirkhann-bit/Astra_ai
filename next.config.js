@@ -3,7 +3,7 @@ const nextConfig = {
   reactStrictMode: true,
   output: "standalone",
   async redirects() {
-    return [{ source: "/goals", destination: "/my-goals", permanent: true }];
+    return [{ source: "/my-goals", destination: "/goals", permanent: true }];
   },
   webpack: (config, { dev }) => {
     if (!dev) config.cache = false;

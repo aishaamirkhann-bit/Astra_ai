@@ -3,9 +3,10 @@
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ShieldCheck, Mail, Lock, User, Loader2, ArrowRight, ShoppingBag, Store } from "lucide-react";
+import { ShieldCheck, Mail, User, Loader2, ArrowRight, ShoppingBag, Store } from "lucide-react";
 import { registerUser } from "@/lib/api";
 import { storePendingOtp } from "@/lib/auth";
+import PasswordInput from "@/components/auth/PasswordInput";
 import type { UserRole } from "@/lib/types";
 
 export default function SignupPage() {
@@ -33,10 +34,10 @@ export default function SignupPage() {
       router.push("/verify-otp");
     } catch (err) {
       const message = err instanceof Error ? err.message : "";
-      if (message.includes("409")) {
+      if (message.includes("already registered")) {
         setError("Yeh email pehle se registered hai. Sign in karein.");
       } else {
-        setError("Account nahi ban saka. Dobara try karein.");
+        setError(message || "Account nahi ban saka. Dobara try karein.");
       }
     } finally {
       setLoading(false);
@@ -96,19 +97,7 @@ export default function SignupPage() {
 
             <label className="flex flex-col gap-1.5">
               <span className="text-xs font-medium text-ink-300">Password</span>
-              <div className="glass-hover flex items-center gap-2.5 rounded-xl border border-base-600 bg-base-800/60 px-3.5 py-2.5">
-                <Lock className="h-4 w-4 shrink-0 text-ink-500" />
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  autoComplete="new-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Kam se kam 6 characters"
-                  className="w-full bg-transparent text-sm text-ink-100 placeholder:text-ink-500 focus:outline-none"
-                />
-              </div>
+              <PasswordInput value={password} onChange={setPassword} placeholder="Kam se kam 6 characters" autoComplete="new-password" />
             </label>
 
             <div className="flex flex-col gap-1.5">

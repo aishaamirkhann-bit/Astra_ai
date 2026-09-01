@@ -3,9 +3,11 @@
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ShieldCheck, Mail, Lock, Loader2, ArrowRight } from "lucide-react";
+import { ShieldCheck, Mail, Loader2, ArrowRight } from "lucide-react";
 import { loginUser } from "@/lib/api";
 import { storePendingOtp, storePostAuthRedirect } from "@/lib/auth";
+import PasswordInput from "@/components/auth/PasswordInput";
+import ForgotPasswordModal from "@/components/auth/ForgotPasswordModal";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -13,6 +15,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resetOpen, setResetOpen] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -23,8 +26,8 @@ export default function LoginPage() {
       storePendingOtp(otpChallenge);
       storePostAuthRedirect(new URLSearchParams(window.location.search).get("next") ?? "/");
       router.push("/verify-otp");
-    } catch {
-      setError("Invalid email or password. Try again.");
+    } catch (requestError) {
+      setError((requestError as Error).message || "Invalid email or password. Try again.");
     } finally {
       setLoading(false);
     }
@@ -68,18 +71,14 @@ export default function LoginPage() {
 
             <label className="flex flex-col gap-1.5">
               <span className="text-xs font-medium text-ink-300">Password</span>
-              <div className="glass-hover flex items-center gap-2.5 rounded-xl border border-base-600 bg-base-800/60 px-3.5 py-2.5">
-                <Lock className="h-4 w-4 shrink-0 text-ink-500" />
-                <input
-                  type="password"
-                  required
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full bg-transparent text-sm text-ink-100 placeholder:text-ink-500 focus:outline-none"
-                />
-              </div>
+              <PasswordInput value={password} onChange={setPassword} autoComplete="current-password" />
+              <button
+                type="button"
+                onClick={() => setResetOpen(true)}
+                className="self-end text-[11px] font-medium text-astra-indigo hover:underline"
+              >
+                Forgot password?
+              </button>
             </label>
 
             {error && (
@@ -111,6 +110,8 @@ export default function LoginPage() {
           </Link>
         </p>
       </div>
+
+      <ForgotPasswordModal open={resetOpen} onClose={() => setResetOpen(false)} />
     </div>
   );
 }

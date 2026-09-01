@@ -3,12 +3,16 @@ App entrypoint. Run with:
     uvicorn app.main:app --reload
 """
 import asyncio
+import time
+from collections import deque
 from contextlib import asynccontextmanager, suppress
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from app.core.config import settings
+import app.core.logging  # noqa: F401  (configures root logger on import)
 from app.core.database import Base, engine
 from app.api.v1.router import api_router
 from app.realtime.pipeline_ws import router as pipeline_ws_router
@@ -16,9 +20,11 @@ from app.realtime.deals_ws import router as deals_ws_router
 from app.realtime.wallet_ws import router as wallet_ws_router
 from app.realtime.notifications_ws import router as notifications_ws_router, manager as notification_manager
 from app.realtime.messaging_ws import router as messaging_ws_router
+from app.realtime.negotiation_ws import router as negotiation_ws_router
 from app.db.runtime_migrations import apply_sqlite_compatibility_migrations, migrate_legacy_wallet_data
 from app.services.deal_events import deal_event_bus
 from app.services.deals_pipeline import bootstrap_deals_data, evaluate_deals, finalize_reversal_orders, release_expired_reservations
+from app.services.market_feed import record_market_observations
 from app.services.budget_agent import evaluate_all_budget_matches
 from app.core.database import SessionLocal
 from app.core.rate_limit import SensitiveEndpointRateLimitMiddleware
@@ -74,6 +80,7 @@ async def lifespan(app: FastAPI):
         try:
             bootstrap_deals_data(db)
             finalize_reversal_orders(db)
+            record_market_observations(db)
             deal_events = [*release_expired_reservations(db), *evaluate_deals(db)]
             return [*deal_events, *evaluate_all_budget_matches(db)]
         finally:
@@ -83,6 +90,7 @@ async def lifespan(app: FastAPI):
         db = SessionLocal()
         try:
             finalize_reversal_orders(db)
+            record_market_observations(db)
             deal_events = [*release_expired_reservations(db), *evaluate_deals(db)]
             return [*deal_events, *evaluate_all_budget_matches(db)]
         finally:
@@ -126,14 +134,83 @@ app.add_middleware(
 )
 app.add_middleware(SensitiveEndpointRateLimitMiddleware)
 
+# --- Monitoring: in-process latency metrics -------------------------------
+import logging
+
+log = logging.getLogger("astra.access")
+_STARTED_AT = time.monotonic()
+_LATENCY_SAMPLES: deque[float] = deque(maxlen=2000)
+_REQUEST_COUNT = {"total": 0, "errors": 0}
+
+
+@app.middleware("http")
+async def record_latency_metrics(request: Request, call_next):
+    started = time.perf_counter()
+    response = await call_next(request)
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    if request.url.path not in {"/metrics"}:
+        _LATENCY_SAMPLES.append(elapsed_ms)
+        _REQUEST_COUNT["total"] += 1
+        if response.status_code >= 500:
+            _REQUEST_COUNT["errors"] += 1
+        log.info(
+            "%s %s -> %d (%.1fms)",
+            request.method, request.url.path, response.status_code, elapsed_ms,
+        )
+    return response
+
+
+def _percentile(samples: list[float], pct: float) -> float:
+    if not samples:
+        return 0.0
+    ordered = sorted(samples)
+    index = min(len(ordered) - 1, int(len(ordered) * pct))
+    return round(ordered[index], 2)
+
+
+@app.get("/metrics")
+def metrics():
+    db_status = {"connected": False, "latency_ms": None, "dialect": engine.dialect.name}
+    try:
+        started = time.perf_counter()
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+        db_status["latency_ms"] = round((time.perf_counter() - started) * 1000, 2)
+        db_status["connected"] = True
+    except Exception as cause:  # surface DB outages in metrics, never crash
+        db_status["error"] = str(cause)[:200]
+    samples = list(_LATENCY_SAMPLES)
+    return {
+        "app": settings.APP_NAME,
+        "env": settings.APP_ENV,
+        "uptime_seconds": round(time.monotonic() - _STARTED_AT, 1),
+        "database": db_status,
+        "requests": {
+            "total": _REQUEST_COUNT["total"],
+            "server_errors": _REQUEST_COUNT["errors"],
+            "latency_ms": {
+                "avg": round(sum(samples) / len(samples), 2) if samples else 0.0,
+                "p50": _percentile(samples, 0.50),
+                "p95": _percentile(samples, 0.95),
+                "p99": _percentile(samples, 0.99),
+            },
+        },
+    }
+
 app.include_router(api_router)
 app.include_router(pipeline_ws_router)
 app.include_router(deals_ws_router)
 app.include_router(wallet_ws_router)
 app.include_router(notifications_ws_router)
 app.include_router(messaging_ws_router)
+app.include_router(negotiation_ws_router)
 
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "app": settings.APP_NAME}
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+        return {"status": "ok", "db": "connected"}
+    except Exception:
+        return {"status": "degraded", "db": "disconnected"}

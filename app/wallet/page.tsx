@@ -2,16 +2,17 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Wallet2, ArrowDownLeft, ArrowUpRight, Target, Loader2, Radio, Sparkles } from "lucide-react";
+import { Wallet2, ArrowDownLeft, ArrowUpRight, Target, Loader2, Radio, Sparkles, Globe2 } from "lucide-react";
 import PageShell from "@/components/PageShell";
-import { getWallet, getGoals, getWalletWebSocketUrl, topUpWallet, withdrawFromWallet } from "@/lib/api";
-import type { WalletDetailOut, GoalOut } from "@/lib/types";
+import { getWallet, getGoals, getWalletWebSocketUrl, topUpWallet, withdrawFromWallet, getMicroSettlements } from "@/lib/api";
+import type { WalletDetailOut, GoalOut, MicroSettlements } from "@/lib/types";
 
 export default function WalletPage() {
   const [wallet, setWallet] = useState<WalletDetailOut | null>(null);
   const [goals, setGoals] = useState<GoalOut[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [settlements, setSettlements] = useState<MicroSettlements | null>(null);
 
   // Top up / withdraw inline forms
   const [mode, setMode] = useState<"topup" | "withdraw" | null>(null);
@@ -29,6 +30,7 @@ export default function WalletPage() {
     refresh()
       .catch(() => setError("Could not load wallet."))
       .finally(() => setLoading(false));
+    getMicroSettlements().then(setSettlements).catch(() => setSettlements(null));
   }, []);
 
   useEffect(() => {
@@ -154,11 +156,36 @@ export default function WalletPage() {
               )}
             </div>
             <Link
-              href="/my-goals"
+              href="/goals"
               className="mt-4 inline-block text-[11px] font-medium text-ink-500 hover:text-ink-100"
             >
               Manage goals →
             </Link>
+          </section>
+
+          <section className="glass rounded-xl2 p-5">
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Globe2 className="h-4 w-4 text-astra-cyan" />
+                <p className="text-xs font-medium text-ink-100">Cross-border micro-escrow</p>
+              </div>
+              {settlements && <span className="rounded-full bg-signal-good/10 px-2 py-0.5 text-[9px] font-bold text-signal-good">Fee Rs. {settlements.total_fee.toLocaleString()}</span>}
+            </div>
+            <p className="text-[10px] text-ink-500">Zero-fee multi-currency micro-settlement routing for every wallet move.</p>
+            {settlements ? (
+              <div className="mt-3 flex flex-col gap-1.5">
+                <p className="font-mono text-[9px] text-ink-700">{settlements.corridor} · ref {settlements.reference} · slippage {settlements.fx_slippage_percent}%</p>
+                {settlements.routes.map((hop, index) => (
+                  <div key={index} className="flex items-center justify-between gap-2 rounded-lg bg-base-900/70 px-2.5 py-1.5 font-mono text-[9px] text-ink-500">
+                    <span>{hop.from} → {hop.to} <span className="text-ink-700">via {hop.via}</span></span>
+                    <span className="shrink-0 text-ink-300">@{hop.rate} · {hop.latency_ms}ms</span>
+                  </div>
+                ))}
+                <p className="mt-1 text-[9px] text-signal-good">Settled Rs. {Math.round(settlements.amount).toLocaleString()} · total fee Rs. {settlements.total_fee.toLocaleString()} · instant finality</p>
+              </div>
+            ) : (
+              <p className="mt-3 text-[10px] text-ink-500">Loading settlement route…</p>
+            )}
           </section>
         </div>
 

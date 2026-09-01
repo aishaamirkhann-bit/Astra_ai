@@ -69,6 +69,79 @@ def parse_query_intent(query: str) -> tuple[str, float | None, list[str]]:
     return normalized, budget, tags
 
 
+ACTION_TERMS = ("buy", "purchase", "order", "grab", "kharido", "khareed", "lena hai", "leni hai", "chahiye", "book")
+CATEGORY_TERMS = {
+    "Mobiles": ("phone", "smartphone", "mobile", "iphone", "samsung", "galaxy", "pixel", "infinix"),
+    "Laptops & Computers": ("laptop", "notebook", "computer", "macbook", "gaming pc", "ultrabook"),
+    "Audio & Wearables": ("headphone", "earbud", "airpods", "smartwatch", "watch", "speaker", "audio"),
+    "Jewelry": ("jewelry", "jewellery", "ring", "earring", "necklace", "bracelet"),
+    "Clothing & Fashion": ("dress", "kurta", "shirt", "jacket", "clothes", "fashion", "sneaker", "shoes"),
+    "Makeup & Beauty": ("makeup", "lipstick", "beauty", "skincare", "perfume", "foundation"),
+    "Home Appliances": ("fridge", "refrigerator", "washing machine", "air conditioner", "microwave", "oven", "blender"),
+    "Households": ("household", "kitchen", "cookware", "dinner set"),
+}
+
+
+def resolve_purchase_intent(query: str) -> dict[str, Any]:
+    """Voice-to-Action: parse action/budget/category and pick the best product."""
+    normalized, budget, _tags = parse_query_intent(query)
+    bare_amount = re.search(r"(?:rs\.?|rupees|paise)?\s*(\d{2,7}(?:\.\d+)?)\s*(k|thousand|hazar|lac|lakh)?", normalized)
+    if budget is None and bare_amount:
+        budget = float(bare_amount.group(1))
+        multiplier = bare_amount.group(2)
+        if multiplier in {"k", "thousand", "hazar"}:
+            budget *= 1000
+        elif multiplier in {"lac", "lakh"}:
+            budget *= 100000
+        if budget < 1000 and multiplier is None:
+            budget *= 1000  # "200" in speech almost always means 200k PKR
+
+    action = next((term for term in ACTION_TERMS if term in normalized), None)
+    category = next((name for name, terms in CATEGORY_TERMS.items() if any(term in normalized for term in terms)), None)
+
+    tokens = {token for token in re.findall(r"[a-z0-9]+", normalized) if len(token) > 2}
+    candidates: list[tuple[float, dict[str, Any]]] = []
+    for product in product_repository.list_products():
+        if budget is not None and product["price"] > budget:
+            continue
+        haystack = " ".join([product["title"], product["category"], product["search_terms"], " ".join(product["semantic_tags"])]).lower()
+        product_tokens = set(re.findall(r"[a-z0-9]+", haystack))
+        overlap = len(tokens & product_tokens)
+        category_bonus = 2.0 if product["category"] == category else 0.0
+        score = overlap * 1.0 + category_bonus + product["trust"] / 100 + product["rating"] / 25
+        if category and product["category"] != category and overlap == 0:
+            continue
+        if overlap == 0 and category_bonus == 0:
+            continue
+        candidates.append((score, product))
+
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    matched = candidates[0][1] if candidates else None
+    alternatives = [
+        {key: product[key] for key in ("id", "title", "category", "price", "image_url", "trust")}
+        for _, product in candidates[1:3]
+    ]
+    intent = "buy" if action and matched else ("browse" if matched else "search")
+    return {
+        "query": query,
+        "intent": intent,
+        "action": {
+            "type": "checkout" if intent == "buy" else "search",
+            "label": "Voice-to-Action autonomous checkout" if intent == "buy" else "Catalog search",
+            "verb": action,
+        },
+        "budget": budget,
+        "category": matched["category"] if matched else category,
+        "matched_product": (
+            {key: matched[key] for key in ("id", "title", "category", "price", "image_url", "trust", "rating", "seller_name", "is_verified_seller")}
+            | {"formatted_price": f"Rs. {matched['price']:,.0f}"}
+        ) if matched else None,
+        "alternatives": alternatives,
+        "auto_checkout": intent == "buy",
+        "confidence": round(min(0.62 + (candidates[0][0] if candidates else 0) / 12, 0.99), 2),
+    }
+
+
 def _keyword_score(query: str, product: dict[str, Any]) -> float:
     stop_words = {"a", "an", "and", "for", "in", "ke", "ko", "under", "the", "to"}
     tokens = {token for token in re.findall(r"[a-z0-9]+", query) if token not in stop_words}

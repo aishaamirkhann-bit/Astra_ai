@@ -17,7 +17,7 @@ def _feed(db: Session, user_id: int) -> list[NotificationOut]:
     for alert in db.query(BudgetAlert).filter(BudgetAlert.user_id == user_id).all():
         category = "deal_match" if alert.alert_type == "Deal_Matched" else "financial_alert"
         title = "AI deal match" if category == "deal_match" else "Financial alert"
-        href = f"/deals?deal={alert.deal_id}&goal={alert.goal_id}" if alert.deal_id else "/my-goals"
+        href = f"/deals?deal={alert.deal_id}&goal={alert.goal_id}" if alert.deal_id else "/goals"
         items.append(NotificationOut(id=f"budget-{alert.alert_id}", category=category, title=title, message=alert.message, is_read=bool(alert.is_read), created_at=alert.created_at.replace(tzinfo=alert.created_at.tzinfo or timezone.utc), href=href, deal_id=alert.deal_id, goal_id=alert.goal_id))
     return sorted(items, key=lambda item: item.created_at, reverse=True)
 

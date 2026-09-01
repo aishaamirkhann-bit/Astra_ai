@@ -27,6 +27,9 @@ class Order(Base):
     storage = Column(Text, nullable=False, default="")
     price = Column(Float, nullable=False)
     status = Column(Enum(OrderStatus), default=OrderStatus.PENDING_APPROVAL)
+    # Escrow lifecycle: HELD while funds sit in reversible checkout,
+    # RELEASED to the seller once confirmed, REFUNDED on reversal/dispute.
+    escrow_status = Column(String(20), nullable=False, default="HELD", server_default="HELD")
 
     # Reversible checkout window bookkeeping
     approval_deadline = Column(DateTime(timezone=True), nullable=True)

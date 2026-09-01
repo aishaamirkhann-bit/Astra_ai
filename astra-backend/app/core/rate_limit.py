@@ -8,13 +8,20 @@ from starlette.responses import JSONResponse
 
 from app.core.config import settings
 
+_RATE_LIMIT_BUCKETS: dict[str, deque[float]] = defaultdict(deque)
+
+
+def reset_rate_limit_state() -> None:
+    """Clear in-process buckets (primarily for isolated tests)."""
+    _RATE_LIMIT_BUCKETS.clear()
+
 
 class SensitiveEndpointRateLimitMiddleware(BaseHTTPMiddleware):
     """Small-process limiter; Redis provides shared enforcement in production."""
 
     def __init__(self, app):
         super().__init__(app)
-        self._requests: dict[str, deque[float]] = defaultdict(deque)
+        self._requests = _RATE_LIMIT_BUCKETS
         self._lock = asyncio.Lock()
 
     async def dispatch(self, request: Request, call_next):
@@ -39,6 +46,6 @@ class SensitiveEndpointRateLimitMiddleware(BaseHTTPMiddleware):
     def _limit_for(path: str) -> int:
         if path.endswith("/wallet/authorize-consent"):
             return settings.CONSENT_RATE_LIMIT
-        if path.endswith(("/auth/verify-otp", "/auth/resend-otp", "/auth/login")):
+        if path.endswith(("/auth/verify-otp", "/auth/resend-otp", "/auth/login", "/auth/forgot-password", "/auth/reset-password")):
             return settings.OTP_RATE_LIMIT
         return 0

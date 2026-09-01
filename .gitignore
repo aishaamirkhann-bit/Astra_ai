@@ -9,12 +9,16 @@ env/
 out/
 dist/
 build/
+playwright-report/
+test-results/
+.playwright-browsers/
 
 # Environment files and secrets
 .env
 .env.*
 !.env.example
 !.env.production.example
+!.env.local.example
 
 # Python caches and local databases
 __pycache__/
@@ -42,3 +46,6 @@ desktop.ini
 *.swp
 *.swo
 *~
+
+# Database backups (scripts/backup_db.py output)
+backups/

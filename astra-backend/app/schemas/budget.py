@@ -78,7 +78,22 @@ class MatchedDealOut(BaseModel):
     message: str
 
 
+class RestockForecastOut(BaseModel):
+    product_id: str | None = None
+    product_name: str
+    image: str | None = None
+    category: str | None = None
+    last_purchased: str | None = None
+    avg_interval_days: int
+    predicted_next_date: str
+    days_until_restock: int
+    confidence: float
+    estimated_price: float
+    message: str
+
+
 class BudgetDashboardOut(BaseModel):
     budget: BudgetOut
     goals: list[ShoppingGoalOut]
     alerts: list[BudgetAlertOut]
+    restock_forecasts: list[RestockForecastOut] = Field(default_factory=list)

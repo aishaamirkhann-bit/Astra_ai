@@ -31,15 +31,17 @@ from app.core.security import (
 from app.models.user import User
 from app.models.wallet import Wallet
 from app.schemas.user import (
+    ForgotPasswordRequest,
     LoginRequest,
     OtpRequiredResponse,
     RegisterRequest,
     ResendOtpRequest,
+    ResetPasswordRequest,
     TokenResponse,
     UserOut,
     VerifyOtpRequest,
 )
-from app.services.email_service import send_otp_email
+from app.services.email_service import send_otp_email, send_password_reset_email
 from app.utils.helpers import as_aware_utc
 from app.api.deps import get_current_user
 
@@ -171,6 +173,50 @@ def resend_otp(payload: ResendOtpRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     return _issue_otp(db, user)
+
+
+@router.post("/forgot-password")
+def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == payload.email).first()
+    if user is not None:
+        code = generate_otp_code()
+        user.reset_code_hash = hash_otp(code)
+        user.reset_expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.OTP_EXPIRE_MINUTES)
+        user.reset_attempts = 0
+        db.commit()
+        send_password_reset_email(user.email, user.name, code)
+    # Same response either way so account existence is never leaked.
+    return {"message": f"If that email is registered, a reset code has been sent to {payload.email}."}
+
+
+@router.post("/reset-password")
+def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == payload.email).first()
+    if user is None or user.reset_code_hash is None or user.reset_expires_at is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No pending reset request for this account")
+
+    if datetime.now(timezone.utc) > as_aware_utc(user.reset_expires_at):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Reset code expired — request a new one")
+
+    if user.reset_attempts >= settings.OTP_MAX_ATTEMPTS:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many attempts — request a new code")
+
+    dev_bypass = settings.APP_ENV != "production" and payload.code == DEV_OTP_CODE
+    if not dev_bypass and not verify_otp(payload.code, user.reset_code_hash):
+        user.reset_attempts += 1
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Incorrect reset code")
+
+    user.hashed_password = hash_password(payload.new_password)
+    user.reset_code_hash = None
+    user.reset_expires_at = None
+    user.reset_attempts = 0
+    # A password change invalidates any half-finished login OTP as well.
+    user.otp_code_hash = None
+    user.otp_expires_at = None
+    user.otp_attempts = 0
+    db.commit()
+    return {"message": "Password updated — sign in with your new password."}
 
 
 @router.get("/me", response_model=UserOut)

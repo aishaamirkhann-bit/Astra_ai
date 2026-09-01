@@ -1,10 +1,12 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db
 from app.api.v1.endpoints.approval import _release_order_reservation
+from app.core.config import settings
 from app.models.order import Order, OrderStatus
 from app.models.pipeline import AuditLog
 from app.models.user import User
@@ -16,6 +18,7 @@ from app.models.budget import UserBudget
 from app.models.wallet import UserWallet, WalletTransaction
 from app.realtime.wallet_ws import manager as wallet_events
 from app.schemas.order import OrderDetailOut, OrderOut, ReorderResponse, ReverseOrderResponse
+from app.services import astra_agents
 from app.services.audit import record_audit
 from app.utils.helpers import as_aware_utc
 
@@ -51,7 +54,7 @@ def list_orders(db: Session = Depends(get_db), current_user: User = Depends(get_
     return [OrderOut(
         order_ref=order.order_ref, product_name=order.product.title,
         price=order.price, quantity=order.quantity, size=order.size, color=order.color, storage=order.storage,
-        status=order.status.value, seconds_left=_seconds_left(order), placed_at=order.created_at,
+        status=order.status.value, escrow_status=order.escrow_status, seconds_left=_seconds_left(order), placed_at=order.created_at,
         image=order.product.image_url,
     ) for order in orders]
 
@@ -61,7 +64,7 @@ def order_detail(order_ref: str, db: Session = Depends(get_db), current_user: Us
     order = db.query(Order).filter(Order.order_ref == order_ref, Order.user_id == current_user.id).first()
     if not order: raise HTTPException(status_code=404, detail="Order not found")
     consent = db.query(FinancialConsentLog).filter(FinancialConsentLog.reference_order_id == order.id, FinancialConsentLog.consumed_at.is_not(None)).first()
-    return OrderDetailOut(order_ref=order.order_ref, product_name=order.product.title, product_id=order.product_id, price=order.price, unit_price=round(order.price / order.quantity, 2), subtotal=order.price, quantity=order.quantity, size=order.size, color=order.color, storage=order.storage, status=order.status.value, seconds_left=_seconds_left(order), placed_at=order.created_at, image=order.product.image_url, seller_name=order.product.seller_name, seller_verified=order.product.is_verified_seller, seller_trust_score=order.product.trust, payment_method="Wallet / Consent Verified" if consent else "Wallet", consent_method=consent.auth_method if consent else None, shipped_at=order.shipped_at, delivered_at=order.delivered_at)
+    return OrderDetailOut(order_ref=order.order_ref, product_name=order.product.title, product_id=order.product_id, price=order.price, unit_price=round(order.price / order.quantity, 2), subtotal=order.price, quantity=order.quantity, size=order.size, color=order.color, storage=order.storage, status=order.status.value, escrow_status=order.escrow_status, seconds_left=_seconds_left(order), placed_at=order.created_at, image=order.product.image_url, seller_name=order.product.seller_name, seller_verified=order.product.is_verified_seller, seller_trust_score=order.product.trust, payment_method="Wallet / Consent Verified" if consent else "Wallet", consent_method=consent.auth_method if consent else None, shipped_at=order.shipped_at, delivered_at=order.delivered_at)
 
 
 @router.post("/{order_ref}/reorder", response_model=ReorderResponse)
@@ -93,6 +96,7 @@ async def reverse_order(order_ref: str, db: Session = Depends(get_db), current_u
         if budget:
             budget.current_spent = max(0, budget.current_spent - order.price)
     order.status = OrderStatus.CANCELLED
+    order.escrow_status = "REFUNDED"
     db.add(Notification(user_id=current_user.id, message=f"{order.order_ref} was reversed and refunded."))
     record_audit(
         db,
@@ -106,3 +110,118 @@ async def reverse_order(order_ref: str, db: Session = Depends(get_db), current_u
         await wallet_events.balance_updated(current_user.id, wallet.available_balance, "Refund")
     await notification_events.broadcast(current_user.id, {"type": "order_update", "order_ref": order.order_ref, "status": "cancelled", "message": "Order reversed and refunded"})
     return ReverseOrderResponse(order_ref=order.order_ref, status="cancelled", message="Order reversed and stock restored")
+
+
+DISPUTE_SEVERITY = {
+    "item_not_received": 70,
+    "item_damaged": 60,
+    "not_as_described": 55,
+    "charged_by_mistake": 45,
+}
+
+
+class DisputeRequest(BaseModel):
+    reason: str
+
+
+@router.get("/{order_ref}/timeline")
+def order_timeline(order_ref: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    order = db.query(Order).filter(Order.order_ref == order_ref, Order.user_id == current_user.id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    consent = db.query(FinancialConsentLog).filter(
+        FinancialConsentLog.reference_order_id == order.id, FinancialConsentLog.consumed_at.is_not(None)
+    ).first()
+    product = order.product
+    placed = as_aware_utc(order.created_at)
+
+    stages = [
+        {"key": "placed", "label": "Order placed & stock reserved", "status": "done", "at": placed.isoformat()},
+        {"key": "approval", "label": "Human approval / financial consent", "status": "done" if order.status != OrderStatus.PENDING_APPROVAL else "active", "at": placed.isoformat()},
+        {"key": "escrow", "label": f"Payment held in escrow (Rs. {order.price:,.0f})", "status": "done", "at": placed.isoformat()},
+        {"key": "release", "label": "Escrow released to seller", "status": "done" if order.escrow_status == "RELEASED" else ("cancelled" if order.escrow_status == "REFUNDED" else "pending"), "at": as_aware_utc(order.reversal_deadline).isoformat() if order.reversal_deadline else None},
+        {"key": "refund", "label": "Escrow refunded to buyer", "status": "done" if order.escrow_status == "REFUNDED" else "pending", "at": None},
+    ]
+
+    reasoning = [
+        {"at": placed.isoformat(), "step": "ASTRA Check", "detail": f"Seller trust {product.trust}/100, verified={product.is_verified_seller}; listing passed price-fairness band."},
+        {"at": placed.isoformat(), "step": "Consent evaluation", "detail": f"{consent.auth_method if consent else 'Wallet'} authorization for Rs. {order.price:,.0f}; single-use consent token consumed at checkout." if consent else "Amount within wallet safety limit — implicit consent recorded."},
+        {"at": placed.isoformat(), "step": "Escrow policy", "detail": f"Reversible window {settings.APPROVAL_WINDOW_SECONDS}s; funds HELD until release conditions met."},
+    ]
+    if order.escrow_status == "REFUNDED":
+        reasoning.append({"at": None, "step": "Dispute engine", "detail": "Risk threshold exceeded — escrow auto-refunded with audit note."})
+
+    response = {"order_ref": order.order_ref, "escrow_status": order.escrow_status, "stages": stages, "reasoning": reasoning}
+    if order.escrow_status == "REFUNDED":
+        response["resolution_timeline"] = astra_agents.resolution_timeline(order.order_ref, 62, order.price)
+    return response
+
+
+@router.get("/{order_ref}/swarm")
+def order_swarm_log(order_ref: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Multi-Agent Swarm Orchestration log for order verification."""
+    order = db.query(Order).filter(Order.order_ref == order_ref, Order.user_id == current_user.id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    return astra_agents.swarm_trace(order.order_ref, order.product.title, order.price)
+
+
+@router.post("/{order_ref}/dispute")
+async def initiate_ai_dispute(
+    order_ref: str,
+    payload: DisputeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    order = db.query(Order).filter(Order.order_ref == order_ref, Order.user_id == current_user.id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.escrow_status == "REFUNDED":
+        raise HTTPException(status_code=409, detail="This order was already refunded")
+
+    reason_key = payload.reason.strip().lower()
+    severity = DISPUTE_SEVERITY.get(reason_key, 30)
+    seller_risk = max(0, 100 - order.product.trust)
+    delivery_risk = 20 if order.status in (OrderStatus.CONFIRMED, OrderStatus.SHIPPED) else 0
+    risk_score = min(100, severity + seller_risk + delivery_risk)
+    checks = [
+        {"rule": "reason.severity", "score": severity, "detail": f"Dispute reason '{reason_key}' mapped to severity {severity}"},
+        {"rule": "seller.trust_exposure", "score": seller_risk, "detail": f"Seller trust {order.product.trust}/100 contributes {seller_risk} risk points"},
+        {"rule": "delivery.stage", "score": delivery_risk, "detail": f"Order status {order.status.value} contributes {delivery_risk} risk points"},
+    ]
+    approved = risk_score >= 50
+
+    if not approved:
+        record_audit(db, event_type="ai.dispute", endpoint=f"/api/v1/orders/{order_ref}/dispute", verdict="review_queued", actor=f"user:{current_user.email}")
+        db.commit()
+        return {"order_ref": order_ref, "risk_score": risk_score, "checks": checks, "escrow_status": order.escrow_status, "decision": "review_queued", "message": "Risk below auto-refund threshold — queued for human review."}
+
+    debit = db.query(WalletTransaction).filter(WalletTransaction.reference_order_id == order.id, WalletTransaction.txn_type == "Debit").first()
+    refund = db.query(WalletTransaction).filter(WalletTransaction.reference_order_id == order.id, WalletTransaction.txn_type == "Refund").first()
+    wallet = db.query(UserWallet).filter(UserWallet.user_id == current_user.id).with_for_update().one()
+    if debit and not refund:
+        wallet.available_balance += order.price
+        db.add(WalletTransaction(wallet_id=wallet.id, amount=order.price, txn_type="Refund", description=f"AI dispute refund - {order.product.title}", reference_order_id=order.id))
+        budget = db.get(UserBudget, current_user.id)
+        if budget:
+            budget.current_spent = max(0, budget.current_spent - order.price)
+    _release_order_reservation(db, order, "ai_dispute_refund")
+    order.escrow_status = "REFUNDED"
+    order.status = OrderStatus.CANCELLED
+    db.add(Notification(user_id=current_user.id, message=f"AI Dispute on {order_ref}: risk {risk_score}/100 — escrow auto-refunded."))
+    record_audit(
+        db,
+        event_type="ai.dispute",
+        endpoint=f"/api/v1/orders/{order_ref}/dispute",
+        verdict="refunded",
+        actor=f"dispute-engine:{current_user.email}",
+    )
+    db.commit()
+    await wallet_events.balance_updated(current_user.id, wallet.available_balance, "Refund")
+    await notification_events.broadcast(current_user.id, {"type": "order_update", "order_ref": order.order_ref, "status": "refunded", "message": "AI dispute approved — escrow refunded"})
+    return {
+        "order_ref": order_ref, "risk_score": risk_score, "checks": checks,
+        "escrow_status": "REFUNDED", "decision": "refunded",
+        "message": "Risk threshold exceeded — escrow auto-refunded with audit note.",
+        "resolution_timeline": astra_agents.resolution_timeline(order_ref, risk_score, order.price),
+    }

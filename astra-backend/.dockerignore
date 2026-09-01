@@ -1,0 +1,14 @@
+.env
+.env.*
+astra.db
+*.sqlite
+*.sqlite3
+backups
+tests
+.pytest*
+__pycache__
+*.py[cod]
+*.log
+venv
+.venv
+uvicorn.log
