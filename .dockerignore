@@ -1,0 +1,15 @@
+node_modules
+.next
+.git
+.gitignore
+.playwright-browsers
+playwright-report
+test-results
+e2e
+astra-backend
+venv
+.venv
+*.log
+.env
+.env.*
+tsconfig.tsbuildinfo

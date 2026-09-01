@@ -13,6 +13,7 @@ from app.models.wallet import FinancialConsentLog, UserWallet, WalletTransaction
 from app.realtime.wallet_ws import manager
 from app.schemas.goal import WalletDetailOut, WalletLedgerEntryOut, WalletOut, WalletTopUpRequest, WalletWithdrawRequest
 from app.schemas.wallet import ConsentAuthorizationRequest, ConsentAuthorizationResponse
+from app.services import astra_agents
 from app.utils.helpers import as_aware_utc, format_pkr
 
 router = APIRouter(prefix="/wallet", tags=["Wallet & Consent"])
@@ -37,6 +38,15 @@ def get_wallet_summary(current_user: User = Depends(get_current_user)):
 @router.get("/ledger", response_model=list[WalletLedgerEntryOut])
 def get_ledger(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return _detail(db, current_user).ledger
+
+
+@router.get("/micro-settlements")
+def micro_settlements(amount: float = 0, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Cross-border micro-escrow simulation: zero-fee multi-currency routes."""
+    if amount <= 0:
+        latest = db.query(WalletTransaction).filter(WalletTransaction.wallet_id == current_user.wallet.id).order_by(WalletTransaction.created_at.desc()).first()
+        amount = abs(latest.amount) if latest else 25000
+    return astra_agents.micro_settlements(amount, f"wallet-{current_user.id}")
 
 
 @router.post("/topup", response_model=WalletDetailOut)

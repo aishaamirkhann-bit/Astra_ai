@@ -10,12 +10,14 @@ Baaki pages (Explore, Goals, Orders, Wallet, Messages, B2B) isi structure pe ext
 | Layer          | Choice                                  |
 |----------------|------------------------------------------|
 | Framework      | FastAPI                                  |
-| DB (dev)       | SQLite (`astra.db`, zero setup)          |
-| DB (prod)      | PostgreSQL (sirf `DATABASE_URL` badlo)   |
+| DB (dev)       | SQLite fallback (`DATABASE_URL`)         |
+| DB (prod)      | PostgreSQL 18 + pgvector 0.8.x           |
+| Migrations     | Alembic (Postgres schema authority)      |
 | ORM            | SQLAlchemy 2.0                           |
-| Auth           | JWT (python-jose) + bcrypt (passlib)     |
+| Auth           | JWT (python-jose) + bcrypt (passlib) + email OTP |
 | Validation     | Pydantic v2                              |
-| Realtime       | WebSocket (pipeline live updates)        |
+| Realtime       | WebSocket + Redis pub/sub (in-process fallback) |
+| Tests          | pytest (70 tests; `python -m pytest -q`) |
 
 ---
 
@@ -24,64 +26,67 @@ Baaki pages (Explore, Goals, Orders, Wallet, Messages, B2B) isi structure pe ext
 ```
 astra-backend/
 ├── app/
-│   ├── main.py                     # FastAPI app, CORS, startup hook
+│   ├── main.py                     # FastAPI app, CORS, lifespan, /health, /metrics
+│   ├── data.py                     # catalog seed data (Unsplash image URLs)
 │   │
 │   ├── core/                       # cross-cutting config
-│   │   ├── config.py                #   env-driven Settings (.env se load hota hai)
+│   │   ├── config.py                #   env-driven Settings (production safety guards)
 │   │   ├── database.py              #   engine, SessionLocal, get_db(), Base
+│   │   ├── rate_limit.py            #   in-process rate limiting (auth, consent, OTP)
 │   │   └── security.py              #   password hashing + JWT create/decode
 │   │
 │   ├── models/                     # SQLAlchemy tables (DB schema)
-│   │   ├── user.py                  #   User (name, email, password, language)
-│   │   ├── product.py               #   Product (price, rating, trust_score, seller...)
-│   │   ├── wallet.py                #   Wallet + WalletLedgerEntry
-│   │   ├── goal.py                  #   Goal (target/allocated amount)
-│   │   ├── order.py                 #   Order + OrderStatus enum (approval/reversal window)
-│   │   ├── pipeline.py              #   PipelineRun, PipelineStageLog, AuditLog
-│   │   └── notification.py          #   Notification (TopBar bell)
+│   │   ├── user.py, product.py, category.py, explore.py   #   catalog + users
+│   │   ├── wallet.py, budget.py, goal.py                  #   money: ledger, budgets, goals
+│   │   ├── deal.py                  #   Deal, DealReservation, MarketPriceHistory, SellerMetric
+│   │   ├── order.py, cart.py        #   escrow orders + variant cart items
+│   │   ├── trust.py                 #   seller verification + trust audit logs
+│   │   ├── negotiation.py, chat.py, messaging.py          #   AI negotiation + DMs
+│   │   └── pipeline.py, notification.py                   #   pipeline state + alerts
 │   │
 │   ├── schemas/                    # Pydantic I/O shapes (API contracts)
-│   │   ├── user.py, product.py, astra_check.py, ai_assistant.py,
-│   │   │   approval.py, pipeline.py, goal.py, home.py
-│   │   └── (each mirrors a shape already used in frontend/lib/mockData.ts)
 │   │
 │   ├── services/                   # business logic — the "engines"
-│   │   ├── finance_engine.py        #   Financial Fit / budget classification
-│   │   ├── trust_engine.py          #   Seller Trust scoring
-│   │   ├── price_fairness_engine.py #   Price vs. category market average
-│   │   ├── consent_orchestrator.py  #   combines 3 engines → Overall Verdict
-│   │   ├── recommendation_engine.py #   "Recommended For You" + AI best-match
-│   │   └── pipeline_engine.py       #   builds ASTRA Decision Pipeline node states
+│   │   ├── deals_pipeline.py        #   deal evaluation, stock locks, market history
+│   │   ├── astra_check_service.py   #   live inspection + trust scoring
+│   │   ├── finance_engine.py, trust_engine.py, price_fairness_engine.py
+│   │   ├── consent_orchestrator.py  #   combines engines → Overall Verdict
+│   │   ├── recommendation_engine.py, explore.py           #   ranking + search
+│   │   ├── budget.py, budget_agent.py                     #   budget alerts + goal matches
+│   │   ├── pipeline_engine.py       #   builds ASTRA Decision Pipeline node states
+│   │   ├── groq_negotiation.py      #   optional LLM seller agent (rules fallback)
+│   │   ├── email_service.py         #   OTP delivery (Resend/SMTP; console in dev)
+│   │   ├── deal_events.py           #   Redis/in-process deal event fan-out
+│   │   └── audit.py                 #   immutable audit trail writes
+│   │
+│   ├── realtime/                   # WebSocket managers
+│   │   └── deals_ws.py, pipeline_ws.py, wallet_ws.py, notifications_ws.py, messaging_ws.py
 │   │
 │   ├── api/
-│   │   ├── deps.py                  #   get_current_user, shared dependencies
+│   │   ├── deps.py                  #   strict JWT get_current_user, require_role()
 │   │   └── v1/
 │   │       ├── router.py            #   combines every endpoint router
-│   │       └── endpoints/
-│   │           ├── auth.py           #   POST /login, GET /me
-│   │           ├── home.py           #   GET /home  (single aggregate call)
-│   │           ├── products.py       #   GET /products/recommended, /products/{slug}
-│   │           ├── astra_check.py    #   GET /astra-check, /astra-check/{slug}
-│   │           ├── ai_assistant.py   #   GET /ai-assistant/suggestion, POST /add-to-cart
-│   │           ├── approval.py       #   GET /pending, POST /approve, POST /cancel
-│   │           ├── pipeline.py       #   GET /pipeline/state
-│   │           ├── goals.py          #   GET /goals/rail, GET /goals
-│   │           └── notifications.py  #   GET /notifications/unread-count
-│   │
-│   ├── websockets/
-│   │   └── pipeline_ws.py           #   WS /ws/pipeline?order_ref=... (live push)
+│   │       └── endpoints/           #   auth, home, products, explore, deals, cart,
+│   │                                #   wallet, goals, approval, orders, astra_check,
+│   │                                #   negotiation, b2b, chat, messaging, seller,
+│   │                                #   ai_assistant, pipeline, notifications
 │   │
 │   ├── db/
-│   │   └── seed.py                  #   demo data matching frontend mockData.ts
+│   │   ├── seed.py                  #   idempotent demo data (users, products, wallets, sellers)
+│   │   └── runtime_migrations.py    #   deals SQL migration runner (SQLite/dev path)
 │   │
 │   └── utils/
-│       └── helpers.py               #   format_pkr(), generate_ref()
+│       └── helpers.py               #   format_pkr(), product_to_out(), time helpers
 │
-├── tests/                          # pytest tests (starter placed here)
+├── alembic/ + alembic.ini          # Postgres migration authority (upgrade head at startup)
+├── migrations/                     # hand-written SQL (deals realtime pipeline)
+├── scripts/
+│   └── validate_postgres.py         #   wallet/index/concurrency validation on Postgres
+├── tests/                          # 70 pytest tests (auth, deals, wallet consent, messaging...)
 ├── requirements.txt
 ├── .env.example
 ├── Dockerfile
-├── docker-compose.yml
+├── docker-compose.yml              # local dev stack (postgres + redis + api)
 └── README.md                       # ← you are here
 ```
 
@@ -91,14 +96,15 @@ astra-backend/
 
 ```bash
 cd astra-backend
-python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
+python -m venv .venv
+source .venv/bin/activate       # Windows: .venv\Scripts\activate
 
 pip install -r requirements.txt
 
-cp .env.example .env            # edit SECRET_KEY at least
+cp .env.example .env            # set DATABASE_URL + SECRET_KEY at least
 
-# Seed demo data (creates astra.db + Aisha user + products + wallet + goal + a pending order)
+# Migrations + seed (idempotent)
+python -m alembic upgrade head  # PostgreSQL only; SQLite uses runtime migrations
 python -m app.db.seed
 
 # Run
@@ -107,10 +113,12 @@ uvicorn app.main:app --reload
 
 API docs auto-generate at: **http://localhost:8000/docs**
 
-Demo login: `aisha@astra.ai` / `demo1234`
-(Home page endpoints also work **without** logging in during dev — `get_current_user`
-falls back to the seeded "Aisha" user when no token is sent. Remove that fallback
-in `app/api/deps.py` before going to production.)
+Demo login: `aisha@astra.ai` / `demo1234`. Auth is strict JWT everywhere
+(no anonymous fallback). Login returns an OTP challenge; in development
+(`APP_ENV != production`) the code `123456` is accepted and the real OTP is
+printed to the server console (`OTP_DEBUG_LOG`). Both conveniences are
+force-disabled when `APP_ENV=production`, which also refuses to boot with the
+default `SECRET_KEY`.
 
 ---
 
@@ -259,12 +267,56 @@ an installment suggestion and are broadcast over `/ws/deals`.
 
 ## 10. Next Steps
 
-- Add Alembic for real migrations (`alembic init alembic`) once schema stabilizes.
-- Build `/explore`, `/goals`, `/orders`, `/wallet`, `/messages`, `/b2b` endpoint modules
-  the same way — one `endpoints/*.py` + matching `schemas/*.py` per page.
-- Replace the dev-only "no token = demo user Aisha" fallback in `app/api/deps.py`
-  with a proper login flow once the frontend has a login screen.
-- Swap `CATEGORY_AVERAGE_PRICE` static dict in `price_fairness_engine.py` for a
-  real market-data source.
-- Add a `Cart` model + endpoints when the cart/checkout flow is built (currently
-  `ai_assistant.add_to_cart` is a stub).
+- Move the in-process authentication rate limiter to Redis for multi-instance enforcement.
+- Wire managed observability (ship the JSON logs + `/metrics` to a collector) and schedule `scripts/backup_db.py` (e.g. cron) with off-site retention.
+- Add a frontend Stripe Elements top-up flow consuming `/api/v1/payments/card/topup`.
+- Configure real email/STT/SMS credentials (`RESEND_API_KEY` or SMTP, `STT_PROVIDER`) per deployment.
+- The live market feed uses a free USD→PKR reference; a licensed per-category price feed can replace `app/services/market_feed.py` behind the same interface.
+
+## 11. Current production architecture (August 2026)
+
+The Docker stack targets **PostgreSQL 18 with pgvector**, Redis 7.4, FastAPI and
+Next.js. PostgreSQL is the production schema authority; SQLite remains a local
+compatibility/test option. On every deployment run migrations before API startup:
+
+```powershell
+python -m alembic current
+python -m alembic upgrade head
+python -m app.db.seed
+```
+
+Create migrations with `python -m alembic revision -m "description"` and review
+generated DDL before applying it. The API refuses to start on PostgreSQL when its
+revision is behind Alembic head. Back up production before downgrade operations.
+
+Catalog semantic vectors use pgvector (`products.embedding vector(1536)`) and an
+HNSW cosine index. FAISS/Sentence-Transformers are an optional offline alternative,
+not an enabled backend path: install `faiss-cpu sentence-transformers` only for an
+offline index job and record model/dimension metadata. The currently deployed
+query path uses PostgreSQL and semantic tags, so documentation does not claim a
+FAISS service is running.
+
+### API groups
+
+- `/api/v1/auth`: register, login, OTP, reset, profile, logout
+- `/api/v1/products`, `/explore`, `/deals`, `/cart`: catalog and commerce
+- `/api/v1/goals`, `/wallet`, `/approval`, `/orders`: finance and escrow
+- `/api/v1/astra-check`, `/negotiation`, `/b2b`: trust and agent decisions
+- `/api/v1/chat`, `/messaging`, `/notifications`: conversations and alerts
+- `/api/v1/payments`: payment methods, Stripe card top-ups, webhook settlement
+- `/api/v1/seller/inventory`: seller product CRUD
+- `/api/v1/seller/orders`: seller escrow monitor and dispatch
+- `/health`, `/metrics`: database health and latency diagnostics
+- `/ws/deals`, `/ws/pipeline`, `/ws/wallet`, `/ws/notifications`, `/ws/messaging`: realtime events
+
+### Environment variables
+
+Required production values are `APP_ENV`, `SECRET_KEY`, `DATABASE_URL`,
+`REDIS_URL`, and `FRONTEND_ORIGIN`. Email uses either `RESEND_API_KEY` or
+`SMTP_HOST`, `SMTP_USER`/`SMTP_USERNAME`, and `SMTP_PASSWORD`. Optional Groq
+negotiation uses `GROQ_API_KEY`, `GROQ_MODEL`, and `GROQ_TIMEOUT_SECONDS`.
+Disable `OTP_DEBUG_LOG` in production. Optional server STT uses `STT_PROVIDER`
+and `STT_API_KEY`; browser Web Speech STT requires no backend credential.
+
+Backend verification: `python -m pytest -q`. Full browser verification is run
+from the frontend root with `npx playwright test`.

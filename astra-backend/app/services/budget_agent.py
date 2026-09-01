@@ -8,10 +8,12 @@ from sqlalchemy.orm import Session
 from app.models.budget import BudgetAlert, ShoppingGoal, UserBudget
 from app.models.deal import Deal
 from app.models.goal import Goal
+from app.models.order import Order, OrderStatus
 from app.models.product import Product
 from app.models.user import User
 from app.models.wallet import WalletLedgerEntry
 from app.schemas.budget import BudgetAlertOut, BudgetDashboardOut, BudgetOut, MatchedDealOut, ShoppingGoalCreate, ShoppingGoalOut, ShoppingGoalUpdate
+from app.services import astra_agents
 from app.services.deals_pipeline import CATEGORY_MAP
 
 
@@ -115,6 +117,28 @@ def evaluate_user_matches(db: Session, user: User) -> list[MatchedDealOut]:
     return output
 
 
+def _restock_forecasts(db: Session, user: User) -> list[dict]:
+    orders = (
+        db.scalars(
+            select(Order)
+            .where(Order.user_id == user.id, Order.status != OrderStatus.CANCELLED)
+            .order_by(Order.created_at.desc())
+            .limit(10)
+        )
+        .all()
+    )
+    fallback = []
+    if not orders:
+        try:
+            from app.repository import product_repository
+
+            catalog = sorted(product_repository.list_products(), key=lambda item: item["price"])
+            fallback = [item for item in catalog if item["price"] <= 60000][:2]
+        except Exception:
+            fallback = []
+    return astra_agents.restock_forecasts(orders, fallback)
+
+
 def budget_dashboard(db: Session, user: User) -> BudgetDashboardOut:
     budget = ensure_budget_profile(db, user)
     matches = evaluate_user_matches(db, user)
@@ -132,6 +156,7 @@ def budget_dashboard(db: Session, user: User) -> BudgetDashboardOut:
         alerts=[BudgetAlertOut(alert_id=alert.alert_id, goal_id=alert.goal_id, deal_id=alert.deal_id,
             alert_type=alert.alert_type, message=alert.message,
             created_at=alert.created_at.replace(tzinfo=alert.created_at.tzinfo or timezone.utc).isoformat()) for alert in alerts],
+        restock_forecasts=_restock_forecasts(db, user),
     )
 
 

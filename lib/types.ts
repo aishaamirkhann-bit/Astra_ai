@@ -115,6 +115,7 @@ export interface OrderOut {
   color: string;
   storage: string;
   status: "pending_approval" | "reversal_window_open" | "confirmed" | "shipped" | "delivered" | "cancelled";
+  escrow_status: "HELD" | "RELEASED" | "REFUNDED";
   seconds_left: number;
   placed_at: string;
   image: string;
@@ -293,10 +294,25 @@ export interface BudgetAlertOut {
   created_at: string;
 }
 
+export interface RestockForecastOut {
+  product_id: string | null;
+  product_name: string;
+  image: string | null;
+  category: string | null;
+  last_purchased: string | null;
+  avg_interval_days: number;
+  predicted_next_date: string;
+  days_until_restock: number;
+  confidence: number;
+  estimated_price: number;
+  message: string;
+}
+
 export interface BudgetDashboardOut {
   budget: BudgetOverview;
   goals: ShoppingGoalOut[];
   alerts: BudgetAlertOut[];
+  restock_forecasts?: RestockForecastOut[];
 }
 
 export interface MatchedDealOut {
@@ -430,4 +446,76 @@ export interface DirectMessageOut {
   sender_name: string;
   content: string;
   created_at: string | null;
+}
+
+/** Voice-to-Action intent parsing (top search bar STT flow). */
+export interface VoiceIntentResult {
+  query: string;
+  intent: "buy" | "browse" | "search";
+  action: { type: "checkout" | "search"; label: string; verb: string | null };
+  budget: number | null;
+  category: string | null;
+  matched_product: {
+    id: string;
+    title: string;
+    category: string;
+    price: number;
+    formatted_price: string;
+    image_url: string;
+    trust: number;
+    rating: number;
+    seller_name: string;
+    is_verified_seller: boolean;
+  } | null;
+  alternatives: Array<{ id: string; title: string; category: string; price: number; image_url: string; trust: number }>;
+  auto_checkout: boolean;
+  confidence: number;
+}
+
+/** Cross-border zero-fee micro-escrow settlement simulation. */
+export interface MicroSettlements {
+  reference: string;
+  base_currency: string;
+  amount: number;
+  corridor: string;
+  total_fee: number;
+  fx_slippage_percent: number;
+  routes: Array<{
+    from: string;
+    to: string;
+    rate: number;
+    amount_in: number;
+    amount_out: number;
+    fee: number;
+    via: string;
+    latency_ms: number;
+    status: string;
+  }>;
+  total_latency_ms: number;
+  settled_at: string;
+}
+
+/** Multi-Agent Swarm orchestration trace for order verification. */
+export interface SwarmTrace {
+  order_ref: string;
+  product: string;
+  orchestrator: string;
+  parallelism: number;
+  total_ms: number;
+  started_at: string;
+  merge: { task: string; start_ms: number; end_ms: number; status: string; detail: string };
+  agents: Array<{
+    agent: string;
+    role: string;
+    status: string;
+    tasks: Array<{ task: string; start_ms: number; end_ms: number; status: string; detail: string }>;
+  }>;
+}
+
+/** Sub-30s dispute auto-resolution log. */
+export interface ResolutionTimeline {
+  order_ref: string;
+  resolved_ms: number;
+  sla_seconds: number;
+  steps: Array<{ phase: string; at: string; ms: number; detail: string }>;
 }

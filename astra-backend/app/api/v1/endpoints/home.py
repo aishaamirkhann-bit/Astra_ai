@@ -116,7 +116,7 @@ def get_home_page(
         hero_suggestions=[
             HeroSuggestion(label="Laptop 150k ke under", href="/explore?q=laptop+150k+ke+under"),
             HeroSuggestion(label="Best phone under 100k", href="/explore?q=best+phone+under+100k"),
-            HeroSuggestion(label="Mera budget check karo", href="/my-goals"),
+            HeroSuggestion(label="Mera budget check karo", href="/goals"),
         ],
         recommended_products=recommended_out,
         astra_check=astra_check,

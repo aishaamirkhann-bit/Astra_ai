@@ -13,6 +13,7 @@ class OrderOut(BaseModel):
     color: str
     storage: str = ""
     status: Literal["pending_approval", "reversal_window_open", "confirmed", "shipped", "delivered", "cancelled"]
+    escrow_status: Literal["HELD", "RELEASED", "REFUNDED"] = "HELD"
     seconds_left: int
     placed_at: datetime
     image: str

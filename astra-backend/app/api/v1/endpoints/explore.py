@@ -1,15 +1,25 @@
 from typing import Annotated
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from app.schemas.explore import BudgetRecommendationResponse, ExploreSearchRequest, ProductDetailSchema, ProductSchema, SearchResponse, WalletResponse
 from app.schemas.categories import CategoryProductsResponse, CategorySchema
 from app.repository import product_repository
 from app.services.budget import get_available_balance, recommend_with_budget
-from app.services.explore import execute_search, get_product, list_products
+from app.services.explore import execute_search, get_product, list_products, resolve_purchase_intent
 
 router = APIRouter(prefix="/explore", tags=["Explore"])
+
+
+class VoiceIntentRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=400)
+
+
+@router.post("/intent")
+async def voice_intent(payload: VoiceIntentRequest) -> dict:
+    """Voice-to-Action: extract budget/category/action and the best matching product."""
+    return resolve_purchase_intent(payload.query)
 
 
 @router.get("/categories", response_model=list[CategorySchema])

@@ -15,6 +15,8 @@ from app.models.trust import PlatformTrustMetric, SellerVerification, TrustAudit
 from app.models.budget import BudgetAlert, ShoppingGoal, UserBudget
 from app.models.chat import ChatConversation, ChatMessage
 from app.models.messaging import DirectMessage, SellerConversation
+from app.models.negotiation import NegotiationRound, NegotiationSession
+from app.models.payment import CardTopUp
 
 __all__ = [
     "User",
@@ -47,4 +49,7 @@ __all__ = [
     "ChatMessage",
     "SellerConversation",
     "DirectMessage",
+    "NegotiationSession",
+    "NegotiationRound",
+    "CardTopUp",
 ]

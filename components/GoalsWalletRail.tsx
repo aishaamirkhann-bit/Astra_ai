@@ -13,13 +13,13 @@ export default function GoalsWalletRail({ data }: { data: GoalsWalletRailOut }) 
           <Target className="h-3.5 w-3.5 text-astra-cyan" />
           <h2 className="font-display text-sm font-semibold text-ink-100">My Goals</h2>
         </div>
-        <Link href="/my-goals" className="flex items-center text-[11px] text-ink-500 hover:text-ink-100">
+        <Link href="/goals" className="flex items-center text-[11px] text-ink-500 hover:text-ink-100">
           View all <ChevronRight className="h-3 w-3" />
         </Link>
       </div>
 
       {goal ? (
-        <Link href="/my-goals" className="block">
+        <Link href="/goals" className="block">
           <p className="text-xs font-medium text-ink-100">{goal.name}</p>
           <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-base-800">
             <div

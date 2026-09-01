@@ -4,20 +4,21 @@ from app.models.explore import ProductModel
 
 
 def _image(keywords: str) -> str:
+    # Served by the Next.js frontend from public/images/products/.
     images = {
-        "smartphone,samsung": "https://images.unsplash.com/photo-1610945265064-0e34e5519bbf?auto=format&fit=crop&w=600&q=80",
-        "laptop,lenovo": "https://images.unsplash.com/photo-1496181133206-80ce9b88a853?auto=format&fit=crop&w=600&q=80",
-        "headphones,sony": "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=600&q=80",
-        "smartwatch,applewatch": "https://images.unsplash.com/photo-1546868871-7041f2a55e12?auto=format&fit=crop&w=600&q=80",
-        "smartphone,xiaomi": "https://images.unsplash.com/photo-1598327105666-5b89351aff97?auto=format&fit=crop&w=600&q=80",
-        "laptop,dell": "https://images.unsplash.com/photo-1496181133206-80ce9b88a853?auto=format&fit=crop&w=600&q=80",
-        "headphones,wireless": "https://images.unsplash.com/photo-1484704849700-f032a568e944?auto=format&fit=crop&w=600&q=80",
-        "earrings,goldjewelry": "https://images.unsplash.com/photo-1535632066927-ab7c9ab60908?auto=format&fit=crop&w=600&q=80",
-        "embroidery,fabric": "https://images.unsplash.com/photo-1598033129183-c4f50c736f10?auto=format&fit=crop&w=600&q=80",
-        "lipstick,cosmetics": "https://images.unsplash.com/photo-1586495777744-4413f21062fa?auto=format&fit=crop&w=600&q=80",
-        "kitchenappliance": "https://images.unsplash.com/photo-1556911220-bff31c812dba?auto=format&fit=crop&w=600&q=80",
+        "smartphone,samsung": "/images/products/samsung-phone.jpg",
+        "laptop,lenovo": "/images/products/lenovo-laptop.jpg",
+        "headphones,sony": "/images/products/sony-headphones.jpg",
+        "smartwatch,applewatch": "/images/products/apple-watch.jpg",
+        "smartphone,xiaomi": "/images/products/xiaomi-phone.jpg",
+        "laptop,dell": "/images/products/lenovo-laptop.jpg",
+        "headphones,wireless": "/images/products/wireless-earbuds.jpg",
+        "earrings,goldjewelry": "/images/products/gold-earrings.jpg",
+        "embroidery,fabric": "/images/products/lawn-fabric.jpg",
+        "lipstick,cosmetics": "/images/products/lipstick-set.jpg",
+        "kitchenappliance": "/images/products/air-fryer.jpg",
     }
-    return images.get(keywords, "https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=600&q=80")
+    return images.get(keywords, "/images/products/fallback-tech.jpg")
 
 
 # Replace this in-memory repository with a PostgreSQL/pgvector or Elasticsearch adapter.

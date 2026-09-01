@@ -24,6 +24,11 @@ class User(Base):
     otp_expires_at = Column(DateTime(timezone=True), nullable=True)
     otp_attempts = Column(Integer, default=0)                # brute-force guard per OTP
 
+    # --- Password reset OTP (separate from login OTP on purpose) ---
+    reset_code_hash = Column(String(255), nullable=True)
+    reset_expires_at = Column(DateTime(timezone=True), nullable=True)
+    reset_attempts = Column(Integer, default=0)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     wallet = relationship("UserWallet", back_populates="owner", uselist=False)

@@ -10,11 +10,29 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.database import SessionLocal
+from app.core.rate_limit import reset_rate_limit_state
 from app.core.security import create_access_token
 from app.main import app
 from app.models.user import User
+from app.models.wallet import UserWallet
 
 DEMO_EMAIL = "aisha@astra.ai"
+
+
+@pytest.fixture(autouse=True)
+def isolated_rate_limiter():
+    reset_rate_limit_state()
+    # Tests share the configured PostgreSQL database; restore the seeded buyer
+    # balance so a failed/aborted checkout cannot poison a later test.
+    with SessionLocal() as db:
+        user = db.query(User).filter(User.email == DEMO_EMAIL).first()
+        if user:
+            wallet = db.query(UserWallet).filter(UserWallet.user_id == user.id).first()
+            if wallet:
+                wallet.available_balance = 650_000
+                db.commit()
+    yield
+    reset_rate_limit_state()
 
 
 @pytest.fixture(scope="session")

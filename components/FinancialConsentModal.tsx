@@ -2,19 +2,28 @@
 
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { CheckCircle2, KeyRound, Loader2, Mic, ShieldCheck, X } from "lucide-react";
-import { authorizeFinancialConsent } from "@/lib/api";
+import { CheckCircle2, Globe2, KeyRound, Loader2, Mic, ShieldCheck, X } from "lucide-react";
+import { authorizeFinancialConsent, getMicroSettlements } from "@/lib/api";
+import type { MicroSettlements } from "@/lib/types";
 
-export default function FinancialConsentModal({ open, amount, orderRef, onClose, onAuthorized }: { open: boolean; amount: number; orderRef: string; onClose: () => void; onAuthorized: (consentId: string) => Promise<void> }) {
-  const [tab, setTab] = useState<"Voice" | "OTP">("Voice");
+export default function FinancialConsentModal({ open, amount, orderRef, onClose, onAuthorized, initialTab = "Voice" }: { open: boolean; amount: number; orderRef: string; onClose: () => void; onAuthorized: (consentId: string) => Promise<void>; initialTab?: "Voice" | "OTP" }) {
+  const [tab, setTab] = useState<"Voice" | "OTP">(initialTab);
   const [recording, setRecording] = useState(false);
   const [busy, setBusy] = useState(false);
   const [otp, setOtp] = useState("");
   const [challengeId, setChallengeId] = useState("");
   const [devOtp, setDevOtp] = useState("");
   const [error, setError] = useState("");
+  const [settlements, setSettlements] = useState<MicroSettlements | null>(null);
 
-  useEffect(() => { if (!open) { setOtp(""); setChallengeId(""); setDevOtp(""); setError(""); setRecording(false); } }, [open]);
+  useEffect(() => { if (!open) { setOtp(""); setChallengeId(""); setDevOtp(""); setError(""); setRecording(false); setSettlements(null); } else { setTab(initialTab); } }, [open, initialTab]);
+
+  useEffect(() => {
+    if (!open || amount <= 0) return;
+    let live = true;
+    getMicroSettlements(amount).then((result) => { if (live) setSettlements(result); }).catch(() => undefined);
+    return () => { live = false; };
+  }, [open, amount]);
 
   async function finishVoice() {
     setRecording(false); setBusy(true); setError("");
@@ -50,7 +59,7 @@ export default function FinancialConsentModal({ open, amount, orderRef, onClose,
         <button onClick={onClose} className="absolute right-4 top-4 rounded-full p-2 text-slate-400 hover:bg-white/10 hover:text-white" aria-label="Close"><X className="h-4 w-4" /></button>
         <span className="grid h-11 w-11 place-items-center rounded-2xl bg-violet-500/20 text-violet-300"><ShieldCheck className="h-6 w-6" /></span>
         <h2 id="consent-title" className="mt-4 font-display text-xl font-bold text-white">Financial consent required</h2>
-        <p className="mt-1 text-sm text-slate-400">Securely authorize <strong className="text-white">Rs. {amount.toLocaleString()}</strong> for {orderRef}.</p>
+        <p className="mt-1 text-sm text-slate-400">Securely authorize <strong className="text-white">Rs. {amount.toLocaleString()}</strong> for {orderRef || "this order"}.</p>
       </div>
       <div className="p-4 sm:p-6">
         <div className="grid grid-cols-2 rounded-xl bg-slate-900 p-1"><button onClick={() => setTab("Voice")} className={`rounded-lg py-2 text-xs font-semibold ${tab === "Voice" ? "bg-violet-500 text-white" : "text-slate-400"}`}>Voice consent</button><button onClick={() => setTab("OTP")} className={`rounded-lg py-2 text-xs font-semibold ${tab === "OTP" ? "bg-violet-500 text-white" : "text-slate-400"}`}>6-digit OTP</button></div>
@@ -65,6 +74,19 @@ export default function FinancialConsentModal({ open, amount, orderRef, onClose,
           {!challengeId ? <button disabled={busy} onClick={() => void handleOtp()} className="flex w-full items-center justify-center gap-2 rounded-xl bg-astra-gradient py-3 text-sm font-bold text-white"><KeyRound className="h-4 w-4" /> Send secure OTP</button> : <><p className="text-center text-xs text-slate-400">Enter the code sent to your verified contact.</p><div className="mt-4 flex justify-center"><input autoFocus inputMode="numeric" maxLength={6} value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))} className="w-52 rounded-xl border border-violet-400/30 bg-slate-900 px-4 py-3 text-center font-mono text-2xl tracking-[.45em] text-white outline-none focus:border-violet-400" /></div>{devOtp && <p className="mt-2 text-center text-[10px] text-amber-300">Demo code: {devOtp}</p>}<button disabled={busy || otp.length !== 6} onClick={() => void handleOtp()} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-astra-gradient py-3 text-sm font-bold text-white disabled:opacity-50">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Authorize & complete order</button></>}
         </div>}
         {error && <p className="mt-4 rounded-xl bg-rose-500/10 p-3 text-xs text-rose-300">{error}</p>}
+        {settlements && <div className="mt-4 rounded-xl border border-white/10 bg-slate-900/70 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-cyan-300"><Globe2 className="h-3 w-3" /> Cross-border micro-escrow</span>
+            <span className="rounded-full bg-emerald-400/10 px-2 py-0.5 text-[10px] font-bold text-emerald-300">Total fee Rs. {settlements.total_fee.toLocaleString()} · Zero-FX</span>
+          </div>
+          <p className="mt-1 text-[10px] text-slate-500">{settlements.corridor} · slippage {settlements.fx_slippage_percent}% · ref {settlements.reference}</p>
+          <div className="mt-2 space-y-1">
+            {settlements.routes.map((hop, index) => <div key={index} className="flex items-center justify-between gap-2 rounded-lg bg-slate-950/60 px-2 py-1 font-mono text-[10px] text-slate-400">
+              <span>{hop.from} → {hop.to} <span className="text-slate-600">via {hop.via}</span></span>
+              <span className="text-slate-300">@{hop.rate} · {hop.latency_ms}ms · {hop.status}</span>
+            </div>)}
+          </div>
+        </div>}
         <p className="mt-5 text-center text-[10px] text-slate-500">Encrypted authorization · Amount-bound · Single order use</p>
       </div>
     </motion.section>

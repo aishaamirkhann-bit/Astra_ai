@@ -424,5 +424,6 @@ def finalize_reversal_orders(db: Session) -> None:
     )).all()
     for order in orders:
         order.status = OrderStatus.CONFIRMED
+        order.escrow_status = "RELEASED"
     if orders:
         db.commit()

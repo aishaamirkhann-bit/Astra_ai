@@ -7,7 +7,7 @@ import { Bell, Camera, ChevronDown, Mic, Search, User } from "lucide-react";
 import MobileNav from "@/components/MobileNav";
 import ThemeToggle from "@/components/ThemeToggle";
 import { clearSession } from "@/lib/auth";
-import { getCurrentUser, logoutUser } from "@/lib/api";
+import { getCurrentUser, logoutUser, parseVoiceIntent } from "@/lib/api";
 import type { LoginResponse } from "@/lib/types";
 
 const LANGUAGES = ["English", "Urdu", "Roman Urdu"] as const;
@@ -45,7 +45,16 @@ export default function TopBar({ unreadNotifications = 0, user }: { unreadNotifi
     const Constructor = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
     if (!Constructor) { setStatus("Use Chrome or Edge for voice search"); return; }
     const engine = new Constructor(); engine.lang = language === "Urdu" ? "ur-PK" : "en-US"; engine.interimResults = false; engine.continuous = false;
-    engine.onresult = (event) => { const text = event.results[0][0].transcript; setQuery(text); search(text); };
+    engine.onresult = (event) => {
+      const text = event.results[0][0].transcript; setQuery(text);
+      void parseVoiceIntent(text).then((intent) => {
+        if (intent.intent === "buy" && intent.matched_product) {
+          const bits = [intent.action?.label, intent.category, intent.budget ? `≤ Rs. ${intent.budget.toLocaleString()}` : ""].filter(Boolean).join(" · ");
+          setStatus(`ASTRA Intent: Buy · ${bits || "matched"}`);
+          router.push(`/product/${intent.matched_product.id}?autobuy=1`);
+        } else { search(text); }
+      }).catch(() => search(text));
+    };
     engine.onend = () => { setListening(false); recognition.current = null; }; engine.onerror = () => { setListening(false); setStatus("Voice search could not hear that. Try again."); };
     recognition.current = engine; setListening(true); setStatus("Listening…"); try { engine.start(); } catch { setListening(false); setStatus("Microphone is busy. Try again."); }
   }
