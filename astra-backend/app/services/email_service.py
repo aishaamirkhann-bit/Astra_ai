@@ -13,6 +13,8 @@ Fill credentials in .env — it is covered by .gitignore, never commit them.
 import json
 import logging
 import smtplib
+import socket
+import urllib.error
 import urllib.request
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -48,10 +50,14 @@ def send_html_email(to_email: str, subject: str, text: str, html: str) -> None:
             headers={"Authorization": f"Bearer {settings.RESEND_API_KEY}", "Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(request, timeout=10) as response:
-            if response.status >= 300:
-                raise RuntimeError(f"Resend delivery failed with status {response.status}")
-        return
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                if response.status >= 300:
+                    raise RuntimeError(f"Resend delivery failed with status {response.status}")
+        except (urllib.error.HTTPError, urllib.error.URLError, socket.timeout) as cause:
+            logger.warning("Resend failed, falling back: %s", str(cause)[:120])
+        else:
+            return
 
     if settings.SMTP_HOST and _smtp_username():
         msg = MIMEMultipart("alternative")
