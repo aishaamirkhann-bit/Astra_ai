@@ -35,6 +35,14 @@ class Settings(BaseSettings):
     MARKET_OBSERVATION_INTERVAL_HOURS: int = 6
     MARKET_BASELINE_USD_PKR: float = 278.5
 
+    # --- Live product catalog providers ---
+    EBAY_CLIENT_ID: str = ""
+    EBAY_CLIENT_SECRET: str = ""
+    RAPIDAPI_KEY: str = ""
+    RAPIDAPI_HOST: str = "real-time-product-search.p.rapidapi.com"
+    PRODUCT_PROVIDER_TIMEOUT_SECONDS: float = 5.0
+    REFRESH_PRODUCTS_ON_STARTUP: bool = True
+
     # --- Card payments (Stripe). Empty keys = wallet-only rails. ---
     STRIPE_SECRET_KEY: str = ""
     STRIPE_PUBLISHABLE_KEY: str = ""
