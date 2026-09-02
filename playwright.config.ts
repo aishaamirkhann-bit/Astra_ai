@@ -43,9 +43,23 @@ export default defineConfig({
       url: "http://localhost:8000/health",
       reuseExistingServer: true,
       timeout: 120_000,
+      // E2E uses the development OTP bypass and must never contact a real
+      // email provider configured in astra-backend/.env.
+      env: {
+        ...process.env,
+        APP_ENV: "development",
+        OTP_DEBUG_LOG: "true",
+        RESEND_API_KEY: "",
+        SMTP_HOST: "",
+        SMTP_USERNAME: "",
+        SMTP_USER: "",
+        SMTP_PASSWORD: "",
+      },
     },
     {
-      command: process.platform === "win32" ? "npm.cmd run dev" : "npm run dev",
+      // Invoke Next directly so Playwright owns the actual server process on
+      // Windows too; npm.cmd can leave its child alive after the suite ends.
+      command: "node ./node_modules/next/dist/bin/next dev",
       url: "http://localhost:3000/login",
       reuseExistingServer: true,
       timeout: 120_000,
