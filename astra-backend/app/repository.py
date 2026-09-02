@@ -74,7 +74,21 @@ class ProductRepository:
                             is_verified_seller, badge, image_url, semantic_tags, description,
                             fit, trust, search_terms
                         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (id) DO NOTHING
+                        ON CONFLICT (id) DO UPDATE SET
+                            title = EXCLUDED.title,
+                            category = EXCLUDED.category,
+                            price = EXCLUDED.price,
+                            rating = EXCLUDED.rating,
+                            total_reviews = EXCLUDED.total_reviews,
+                            seller_name = EXCLUDED.seller_name,
+                            is_verified_seller = EXCLUDED.is_verified_seller,
+                            badge = EXCLUDED.badge,
+                            image_url = EXCLUDED.image_url,
+                            semantic_tags = EXCLUDED.semantic_tags,
+                            description = EXCLUDED.description,
+                            fit = EXCLUDED.fit,
+                            trust = EXCLUDED.trust,
+                            search_terms = EXCLUDED.search_terms
                         """,
                         self._seed_rows(),
                     )
@@ -107,11 +121,26 @@ class ProductRepository:
             self._ensure_product_category_column(connection, "?")
             connection.executemany(
                 """
-                INSERT OR IGNORE INTO products (
+                INSERT INTO products (
                     id, title, category, price, rating, total_reviews,
                     seller_name, is_verified_seller, badge, image_url,
                     semantic_tags, description, fit, trust, search_terms
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    title = excluded.title,
+                    category = excluded.category,
+                    price = excluded.price,
+                    rating = excluded.rating,
+                    total_reviews = excluded.total_reviews,
+                    seller_name = excluded.seller_name,
+                    is_verified_seller = excluded.is_verified_seller,
+                    badge = excluded.badge,
+                    image_url = excluded.image_url,
+                    semantic_tags = excluded.semantic_tags,
+                    description = excluded.description,
+                    fit = excluded.fit,
+                    trust = excluded.trust,
+                    search_terms = excluded.search_terms
                 """,
                 self._seed_rows(),
             )

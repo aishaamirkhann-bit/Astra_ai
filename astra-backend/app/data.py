@@ -1,6 +1,11 @@
+import logging
 from typing import Any
 
+from app.core.config import settings
 from app.models.explore import ProductModel
+
+
+log = logging.getLogger("astra.data")
 
 
 def _image(keywords: str) -> str:
@@ -22,7 +27,7 @@ def _image(keywords: str) -> str:
 
 
 # Replace this in-memory repository with a PostgreSQL/pgvector or Elasticsearch adapter.
-PRODUCTS: list[ProductModel] = [
+HARDCODED_PRODUCTS: list[ProductModel] = [
     {
         "id": "samsung-galaxy-s25-ultra",
         "title": "Samsung Galaxy S25 Ultra",
@@ -211,3 +216,12 @@ PRODUCTS: list[ProductModel] = [
         "search_terms": "digital air fryer home appliance kitchen",
     },
 ]
+
+PRODUCTS: list[ProductModel] = HARDCODED_PRODUCTS
+
+if settings.REFRESH_PRODUCTS_ON_STARTUP:
+    from app.services.product_providers import configure_catalog_defaults, get_live_catalog
+
+    configure_catalog_defaults(HARDCODED_PRODUCTS, _image)
+    PRODUCTS, source = get_live_catalog()
+    log.info("product catalog source=%s products=%d", source, len(PRODUCTS))
