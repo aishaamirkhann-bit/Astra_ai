@@ -1,8 +1,0 @@
-{
-  "/page": "app/page.js",
-  "/explore/page": "app/explore/page.js",
-  "/deals/page": "app/deals/page.js",
-  "/product/[slug]/page": "app/product/[slug]/page.js",
-  "/categories/page": "app/categories/page.js",
-  "/goals/page": "app/goals/page.js"
-}
