@@ -2,4 +2,10 @@ node_modules
 .next
 dist
 build
+.envvenv/
+__pycache__/
+*.pyc
 .env
+astra-backend/.env
+.env
+astra-backend/.env
