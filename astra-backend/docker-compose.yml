@@ -1,0 +1,56 @@
+version: "3.9"
+
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # Overrides .env's DATABASE_URL to point at the postgres service below.
+      # Comment this out (and the db service) to keep using SQLite instead.
+      DATABASE_URL: postgresql+psycopg://astra:astra@db:5432/astra_db
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+
+  db:
+    image: pgvector/pgvector:pg18
+    restart: always
+    environment:
+      POSTGRES_USER: astra
+      POSTGRES_PASSWORD: astra
+      POSTGRES_DB: astra_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - astra_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U astra -d astra_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - astra_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  astra_pg_data:
+  astra_redis_data:

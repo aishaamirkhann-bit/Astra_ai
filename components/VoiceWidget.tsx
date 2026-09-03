@@ -3,19 +3,28 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Mic } from "lucide-react";
+import { useSpeechRecognition } from "@/lib/useSpeechRecognition";
 
 const BAR_HEIGHTS = [6, 14, 22, 12, 26, 10, 18, 8, 20, 14, 6];
 
 export default function VoiceWidget() {
-  const [listening, setListening] = useState(false);
+  const [lastTranscript, setLastTranscript] = useState("");
+
+  const { listening, interim, start, stop } = useSpeechRecognition({
+    onFinal: (text) => {
+      setLastTranscript(text);
+      window.dispatchEvent(new CustomEvent("astra:search", { detail: { query: text, commit: true } }));
+    },
+  });
 
   return (
     <section className="glass glass-hover rounded-xl2 p-5 text-center">
       <h2 className="mb-4 font-display text-sm font-semibold text-ink-100">ASTRA Voice</h2>
 
       <button
-        onClick={() => setListening((v) => !v)}
+        onClick={() => (listening ? stop() : start())}
         aria-pressed={listening}
+        aria-label={listening ? "Stop listening" : "Start listening"}
         className={[
           "mx-auto grid h-16 w-16 place-items-center rounded-full transition-all",
           listening ? "bg-astra-gradient shadow-glow" : "bg-base-800 hover:bg-base-700",
@@ -40,8 +49,8 @@ export default function VoiceWidget() {
         ))}
       </div>
 
-      <p className="mt-3 text-xs text-ink-300">
-        {listening ? "Sun rahe hain…" : "Bolo, ASTRA suney ga"}
+      <p className="mt-3 min-h-4 text-xs text-ink-300">
+        {listening ? interim || "Sun rahe hain…" : lastTranscript || "Bolo, ASTRA suney ga"}
       </p>
 
       <Link

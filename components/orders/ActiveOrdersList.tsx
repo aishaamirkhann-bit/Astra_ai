@@ -1,72 +1,37 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Undo2, PackageCheck, Clock } from "lucide-react";
-import { ORDERS } from "@/lib/mockData";
+import { useEffect, useMemo, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { Check, Clock, Download, Gavel, PackageCheck, Printer, RefreshCw, ShieldCheck, ShoppingBag, Truck, Undo2, X } from "lucide-react";
+import { getOrderDetail, getOrders, initiateDispute, reorderItem, reverseOrder } from "@/lib/api";
+import type { DisputeResult } from "@/lib/api";
+import EscrowTimeline from "@/components/orders/EscrowTimeline";
+import RiskResolutionLog from "@/components/orders/RiskResolutionLog";
+import SwarmLog from "@/components/orders/SwarmLog";
+import type { OrderDetail, OrderOut } from "@/lib/types";
+
+const steps = [{ label: "Placed", icon: ShoppingBag }, { label: "Approved", icon: Check }, { label: "Shipped", icon: Truck }, { label: "Delivered", icon: PackageCheck }];
+function progress(status: OrderOut["status"]) { return status === "delivered" ? 4 : status === "shipped" ? 3 : ["confirmed", "reversal_window_open"].includes(status) ? 2 : status === "pending_approval" ? 1 : 0; }
+
+function StatusStepper({ status }: { status: OrderOut["status"] }) {
+  const current = progress(status);
+  return <div className="mt-5 grid grid-cols-4">{steps.map((step, index) => { const done = index < current; const Icon = step.icon; return <div key={step.label} className="relative flex flex-col items-center"><div className="absolute left-0 right-0 top-4 h-0.5 bg-base-600 first:left-1/2 last:right-1/2"><motion.div initial={{ width: 0 }} animate={{ width: done ? "100%" : "0%" }} className="h-full bg-astra-gradient" /></div><motion.span initial={false} animate={{ scale: done ? 1 : .9 }} className={`relative z-10 grid h-8 w-8 place-items-center rounded-full border ${done ? "border-violet-400 bg-astra-gradient text-white" : "border-base-600 bg-base-900 text-ink-700"}`}><Icon className="h-3.5 w-3.5" /></motion.span><span className={`mt-2 text-[9px] font-semibold ${done ? "text-ink-100" : "text-ink-700"}`}>{step.label}</span></div>; })}</div>;
+}
 
 export default function ActiveOrdersList() {
-  const [countdown, setCountdown] = useState(
-    Object.fromEntries(ORDERS.map((o) => [o.id, o.secondsLeft])) as Record<string, number>
-  );
-
-  useEffect(() => {
-    const t = setInterval(() => {
-      setCountdown((prev) => {
-        const next = { ...prev };
-        for (const id in next) {
-          if (next[id] > 0) next[id] -= 1;
-        }
-        return next;
-      });
-    }, 1000);
-    return () => clearInterval(t);
-  }, []);
-
-  return (
-    <section className="glass rounded-xl2 p-5">
-      <h2 className="mb-4 font-display text-sm font-semibold text-ink-100">Active Orders</h2>
-
-      <div className="flex flex-col gap-3">
-        {ORDERS.map((o) => {
-          const secs = countdown[o.id];
-          const reversible = secs > 0;
-          return (
-            <div
-              key={o.id}
-              className="flex flex-col gap-3 rounded-xl border border-base-600 bg-base-800/40 p-4 sm:flex-row sm:items-center sm:justify-between"
-            >
-              <div className="flex items-center gap-3">
-                <div className="grid h-9 w-9 place-items-center rounded-lg bg-base-700">
-                  <PackageCheck className="h-4 w-4 text-ink-300" />
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-ink-100">{o.item}</p>
-                  <p className="text-[11px] text-ink-500">
-                    {o.id} · {o.price}
-                  </p>
-                </div>
-              </div>
-
-              {reversible ? (
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-1.5 rounded-full bg-signal-hold/10 px-3 py-1.5 text-[11px] font-medium text-signal-hold">
-                    <Clock className="h-3.5 w-3.5" />
-                    {secs}s to reverse
-                  </div>
-                  <button className="flex items-center gap-1.5 rounded-lg border border-signal-reject/40 px-3 py-1.5 text-[11px] font-medium text-signal-reject hover:bg-signal-reject/10">
-                    <Undo2 className="h-3.5 w-3.5" />
-                    Reverse order
-                  </button>
-                </div>
-              ) : (
-                <span className="rounded-full bg-signal-good/10 px-3 py-1.5 text-[11px] font-medium text-signal-good">
-                  Confirmed
-                </span>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
+  const [orders, setOrders] = useState<OrderOut[]>([]); const [detail, setDetail] = useState<OrderDetail | null>(null); const [loading, setLoading] = useState(true); const [busyRef, setBusyRef] = useState<string | null>(null); const [notice, setNotice] = useState(""); const [error, setError] = useState("");
+  const [disputeReason, setDisputeReason] = useState("item_not_received"); const [disputeBusy, setDisputeBusy] = useState(false);
+  const [disputeResult, setDisputeResult] = useState<DisputeResult | null>(null); const [timelineVersion, setTimelineVersion] = useState(0);
+  useEffect(() => { void getOrders().then(setOrders).catch((e) => setError(e instanceof Error ? e.message : "Orders could not be loaded.")).finally(() => setLoading(false)); }, []);
+  useEffect(() => { const timer = window.setInterval(() => setOrders((all) => all.map((order) => order.seconds_left > 0 ? { ...order, seconds_left: order.seconds_left - 1 } : order)), 1000); return () => clearInterval(timer); }, []);
+  async function open(orderRef: string) { setBusyRef(orderRef); setDisputeResult(null); try { setDetail(await getOrderDetail(orderRef)); } catch (e) { setError(e instanceof Error ? e.message : "Order details unavailable"); } finally { setBusyRef(null); } }
+  async function reverse(orderRef: string) { setBusyRef(orderRef); try { await reverseOrder(orderRef); setOrders((all) => all.map((o) => o.order_ref === orderRef ? { ...o, status: "cancelled", seconds_left: 0 } : o)); setDetail(null); setNotice("Order reversed and wallet refund recorded."); } catch (e) { setError(e instanceof Error ? e.message : "Could not reverse order"); } finally { setBusyRef(null); } }
+  async function reorder(orderRef: string) { setBusyRef(orderRef); try { const result = await reorderItem(orderRef); setNotice(`${result.message}. Cart now has ${result.cart_total_quantity} item(s).`); } catch (e) { setError(e instanceof Error ? e.message : "Could not re-order item"); } finally { setBusyRef(null); } }
+  async function dispute(orderRef: string) { setDisputeBusy(true); setError(""); try { const result = await initiateDispute(orderRef, disputeReason); await getOrders().then(setOrders); setDisputeResult(result); setTimelineVersion((v) => v + 1); setNotice(result.message); } catch (e) { setError(e instanceof Error ? e.message : "Dispute could not be filed"); } finally { setDisputeBusy(false); } }
+  const active = useMemo(() => orders.filter((o) => o.status !== "cancelled"), [orders]);
+  return <><section className="glass rounded-xl2 p-5"><div className="flex items-center justify-between"><div><h2 className="font-display text-sm font-semibold text-ink-100">Active order timeline</h2><p className="mt-1 text-[10px] text-ink-500">Live fulfillment and reversible checkout tracking</p></div><span className="rounded-full bg-violet-500/10 px-3 py-1 text-[10px] font-bold text-violet-400">{active.length} active</span></div>{loading && <p className="mt-5 text-xs text-ink-500">Loading orders…</p>}{error && <p className="mt-4 rounded-xl bg-rose-500/10 p-3 text-xs text-rose-400">{error}</p>}<div className="mt-5 grid gap-4 xl:grid-cols-2">{orders.map((order) => { const reversible = order.status === "reversal_window_open" && order.seconds_left > 0; return <motion.article layout key={order.order_ref} whileHover={{ y: -2 }} className="rounded-2xl border border-base-600 bg-base-900/60 p-4"><button onClick={() => void open(order.order_ref)} className="flex w-full items-center gap-3 text-left"><img src={order.image} alt="" className="h-14 w-14 rounded-xl object-cover" /><span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-ink-100">{order.product_name} × {order.quantity}</span><span className="mt-1 block text-[10px] text-ink-500">{order.order_ref} · Rs. {order.price.toLocaleString()}</span></span><span className="text-[10px] font-semibold capitalize text-violet-400">{busyRef === order.order_ref ? "Loading…" : "View details"}</span></button>{order.status !== "cancelled" ? <StatusStepper status={order.status} /> : <p className="mt-4 rounded-lg bg-rose-500/10 p-2 text-center text-[10px] font-semibold text-rose-400">Cancelled · refund processed</p>}{reversible && <div className="mt-4 flex items-center justify-between border-t border-base-600 pt-3"><span className="flex items-center gap-1 text-[10px] text-amber-400"><Clock className="h-3 w-3" /> {order.seconds_left}s reversal window</span><button disabled={busyRef === order.order_ref} onClick={() => void reverse(order.order_ref)} className="flex items-center gap-1 text-[10px] font-semibold text-rose-400"><Undo2 className="h-3 w-3" /> Reverse</button></div>}</motion.article>; })}</div></section>
+  <AnimatePresence>{detail && <motion.div className="fixed inset-0 z-[80] flex justify-end bg-slate-950/70 backdrop-blur-sm" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={(e) => e.target === e.currentTarget && setDetail(null)}><motion.aside initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} transition={{ type: "spring", damping: 28 }} className="receipt-panel h-full w-full max-w-xl overflow-y-auto border-l border-base-600 bg-base-950 p-5 sm:p-7"><div className="flex items-start justify-between"><div><p className="text-[10px] font-bold uppercase tracking-[.2em] text-violet-400">Astra order receipt</p><h3 className="mt-1 font-display text-xl font-bold text-ink-100">{detail.order_ref}</h3><p className="mt-1 text-xs text-ink-500">Placed {new Date(detail.placed_at).toLocaleString()}</p></div><button onClick={() => setDetail(null)} className="rounded-full bg-base-800 p-2 text-ink-300 print:hidden"><X className="h-4 w-4" /></button></div><StatusStepper status={detail.status} /><EscrowTimeline key={timelineVersion} orderRef={detail.order_ref} showResolutionLog={!disputeResult?.resolution_timeline} /><SwarmLog orderRef={detail.order_ref} />
+      <div className="mt-5 rounded-xl border border-base-600 p-4 print:hidden"><p className="flex items-center gap-2 text-[9px] font-bold uppercase tracking-wider text-ink-500"><Gavel className="h-3 w-3 text-signal-reject" /> AI Dispute Engine</p><div className="mt-3 flex gap-2"><select value={disputeReason} onChange={(e) => setDisputeReason(e.target.value)} className="flex-1 rounded-lg border border-base-600 bg-base-900 px-3 py-2 text-[11px] text-ink-100"><option value="item_not_received">Item not received</option><option value="item_damaged">Item damaged</option><option value="not_as_described">Not as described</option><option value="charged_by_mistake">Charged by mistake</option></select><button disabled={disputeBusy} onClick={() => void dispute(detail.order_ref)} className="rounded-lg border border-signal-reject/40 px-4 py-2 text-[11px] font-bold text-signal-reject disabled:opacity-50">{disputeBusy ? "Evaluating…" : "Initiate AI Dispute"}</button></div></div>
+      {disputeResult?.resolution_timeline && <div className="mt-4 print:hidden"><RiskResolutionLog timeline={disputeResult.resolution_timeline} /></div>}
+      <div className="mt-5 rounded-xl border border-base-600 p-4 text-xs"><img src={detail.image} alt={detail.product_name} className="h-20 w-20 rounded-xl object-cover" /><div><h4 className="text-sm font-semibold text-ink-100">{detail.product_name}</h4><p className="mt-1 text-[10px] text-ink-500">{[detail.size, detail.color].filter(Boolean).join(" · ") || "Standard variant"}</p><p className="mt-2 text-xs font-bold text-ink-100">Rs. {detail.unit_price.toLocaleString()} × {detail.quantity}</p></div></div><div className="mt-5 grid gap-3 sm:grid-cols-2"><div className="rounded-xl border border-base-600 p-4"><p className="text-[9px] uppercase tracking-wider text-ink-500">Verified seller</p><p className="mt-2 flex items-center gap-2 text-xs font-semibold text-ink-100">{detail.seller_verified && <ShieldCheck className="h-4 w-4 text-emerald-400" />}{detail.seller_name}</p><p className="mt-1 text-[10px] text-emerald-400">Trust score {detail.seller_trust_score}/100</p></div><div className="rounded-xl border border-base-600 p-4"><p className="text-[9px] uppercase tracking-wider text-ink-500">Payment</p><p className="mt-2 text-xs font-semibold text-ink-100">{detail.payment_method}</p>{detail.consent_method && <p className="mt-1 text-[10px] text-violet-400">{detail.consent_method} consent verified</p>}</div></div><div className="mt-5 rounded-xl border border-base-600 p-4 text-xs"><div className="flex justify-between text-ink-500"><span>Subtotal</span><span>Rs. {detail.subtotal.toLocaleString()}</span></div><div className="mt-2 flex justify-between text-ink-500"><span>Delivery</span><span className="text-emerald-400">Free</span></div><div className="mt-3 flex justify-between border-t border-base-600 pt-3 font-bold text-ink-100"><span>Total paid</span><span>Rs. {detail.price.toLocaleString()}</span></div></div><div className="mt-6 grid gap-2 sm:grid-cols-3 print:hidden"><button onClick={() => void reorder(detail.order_ref)} className="flex items-center justify-center gap-2 rounded-xl bg-astra-gradient py-3 text-xs font-bold text-white"><RefreshCw className="h-3.5 w-3.5" /> Item re-order</button><button onClick={() => window.print()} className="flex items-center justify-center gap-2 rounded-xl border border-base-600 py-3 text-xs font-semibold text-ink-100"><Printer className="h-3.5 w-3.5" /> Print</button><button onClick={() => window.print()} className="flex items-center justify-center gap-2 rounded-xl border border-base-600 py-3 text-xs font-semibold text-ink-100"><Download className="h-3.5 w-3.5" /> Save PDF</button></div></motion.aside></motion.div>}</AnimatePresence>{notice && <button onClick={() => setNotice("")} className="fixed bottom-6 right-6 z-[90] rounded-xl border border-emerald-400/20 bg-slate-950 p-4 text-xs text-emerald-300 shadow-2xl">{notice}</button>}</>;
 }

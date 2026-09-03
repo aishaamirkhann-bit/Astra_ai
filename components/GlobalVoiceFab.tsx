@@ -3,12 +3,20 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Mic, X, ArrowUpRight } from "lucide-react";
+import { useSpeechRecognition } from "@/lib/useSpeechRecognition";
 
 const BAR_HEIGHTS = [6, 16, 24, 12, 20, 8];
 
 export default function GlobalVoiceFab() {
   const [open, setOpen] = useState(false);
-  const [listening, setListening] = useState(false);
+  const [lastTranscript, setLastTranscript] = useState("");
+
+  const { listening, interim, start, stop } = useSpeechRecognition({
+    onFinal: (text) => {
+      setLastTranscript(text);
+      window.dispatchEvent(new CustomEvent("astra:search", { detail: { query: text, commit: true } }));
+    },
+  });
 
   return (
     <div className="fixed bottom-5 right-5 z-40 flex flex-col items-end gap-3">
@@ -26,8 +34,9 @@ export default function GlobalVoiceFab() {
           </div>
 
           <button
-            onClick={() => setListening((v) => !v)}
+            onClick={() => (listening ? stop() : start())}
             aria-pressed={listening}
+            aria-label={listening ? "Stop voice search" : "Start voice search"}
             className={[
               "mx-auto grid h-12 w-12 place-items-center rounded-full transition-all",
               listening ? "bg-astra-gradient shadow-glow" : "bg-base-800 hover:bg-base-700",
@@ -46,8 +55,8 @@ export default function GlobalVoiceFab() {
             ))}
           </div>
 
-          <p className="mt-2 text-center text-[11px] text-ink-300">
-            {listening ? "Sun rahe hain…" : "Bolo, ASTRA suney ga"}
+          <p className="mt-2 min-h-8 text-center text-[11px] text-ink-300">
+            {listening ? interim || "Sun rahe hain..." : lastTranscript || "Bolo, ASTRA suney ga"}
           </p>
 
           <Link

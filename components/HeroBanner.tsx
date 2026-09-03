@@ -1,14 +1,7 @@
-"use client";
-
 import Link from "next/link";
+import type { HeroSuggestion } from "@/lib/types";
 
-const SUGGESTIONS = [
-  { label: "Laptop 150k ke under", href: "/explore?q=laptop+150k+ke+under" },
-  { label: "Best phone under 100k", href: "/explore?q=best+phone+under+100k" },
-  { label: "Mera budget check karo", href: "/goals" },
-];
-
-export default function HeroBanner() {
+export default function HeroBanner({ suggestions }: { suggestions: HeroSuggestion[] }) {
   return (
     <section className="glass relative overflow-hidden rounded-xl2 p-6 sm:p-8">
       <div className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-astra-gradient opacity-20 blur-3xl" />
@@ -26,7 +19,7 @@ export default function HeroBanner() {
       </p>
 
       <div className="mt-6 flex flex-wrap gap-2">
-        {SUGGESTIONS.map((s) => (
+        {suggestions.map((s) => (
           <Link
             key={s.label}
             href={s.href}

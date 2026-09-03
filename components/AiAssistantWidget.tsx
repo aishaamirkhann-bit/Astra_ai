@@ -1,14 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import { Sparkles, Star, ShieldCheck, ShoppingCart, X } from "lucide-react";
-import { useState } from "react";
-import { PRODUCTS } from "@/lib/mockData";
+import { Sparkles, Star, ShieldCheck, ShoppingCart, X, Check } from "lucide-react";
+import { useEffect, useState } from "react";
+import type { AiAssistantSuggestion } from "@/lib/types";
+import { addToCart } from "@/lib/api";
 
-export default function AiAssistantWidget() {
-  const featured = PRODUCTS[0];
+export default function AiAssistantWidget({ suggestion }: { suggestion: AiAssistantSuggestion }) {
   const [open, setOpen] = useState(true);
+  const [cartState, setCartState] = useState<"idle" | "loading" | "added" | "error">("idle");
+  useEffect(() => { setOpen(window.sessionStorage.getItem("astra:assistant-dismissed") !== suggestion.product.slug); }, [suggestion.product.slug]);
   if (!open) return null;
+
+  const { product } = suggestion;
+
+  async function handleAddToCart() {
+    setCartState("loading");
+    try {
+      await addToCart(product.slug);
+      setCartState("added");
+    } catch {
+      setCartState("error");
+    }
+  }
 
   return (
     <section className="glass glass-hover rounded-xl2 p-5">
@@ -18,7 +32,7 @@ export default function AiAssistantWidget() {
           <h2 className="font-display text-sm font-semibold text-ink-100">AI Assistant</h2>
         </div>
         <button
-          onClick={() => setOpen(false)}
+          onClick={() => { window.sessionStorage.setItem("astra:assistant-dismissed", product.slug); setOpen(false); }}
           aria-label="Dismiss assistant suggestion"
           className="text-ink-500 hover:text-ink-100"
         >
@@ -27,34 +41,52 @@ export default function AiAssistantWidget() {
       </div>
 
       <p className="mb-3 rounded-lg bg-base-800 px-3 py-2 text-xs text-ink-300">
-        Yeh product aapke liye best match hai:
+        {suggestion.message}
       </p>
 
-      <Link href={`/product/${featured.slug}`} className="flex gap-3">
+      <Link href={`/product/${product.slug}`} className="flex gap-3">
         <div
           className="photo-frame h-16 w-16 shrink-0 rounded-lg"
-          style={{ backgroundImage: `url(${featured.image})` }}
+          style={{ backgroundImage: `url(${product.image})` }}
         />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-ink-100">{featured.name}</p>
+          <p className="truncate text-sm font-medium text-ink-100">{product.name}</p>
           <div className="mt-0.5 flex items-center gap-1 text-[11px] text-ink-500">
             <Star className="h-3 w-3 fill-signal-hold text-signal-hold" />
-            {featured.rating}
+            {product.rating}
           </div>
-          <p className="mt-1 font-display text-sm font-semibold text-ink-100">{featured.price}</p>
+          <p className="mt-1 font-display text-sm font-semibold text-ink-100">{product.price_display}</p>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
-            <span className="rounded-full bg-signal-good/10 px-2 py-0.5 text-[10px] font-medium text-signal-good">
-              Fits your budget
-            </span>
-            <span className="flex items-center gap-0.5 rounded-full bg-astra-gradient-soft px-2 py-0.5 text-[10px] font-medium text-ink-100">
-              <ShieldCheck className="h-2.5 w-2.5" /> Verified Seller
-            </span>
+            {suggestion.fits_budget && (
+              <span className="rounded-full bg-signal-good/10 px-2 py-0.5 text-[10px] font-medium text-signal-good">
+                Fits your budget
+              </span>
+            )}
+            {suggestion.verified_seller && (
+              <span className="flex items-center gap-0.5 rounded-full bg-astra-gradient-soft px-2 py-0.5 text-[10px] font-medium text-ink-100">
+                <ShieldCheck className="h-2.5 w-2.5" /> Verified Seller
+              </span>
+            )}
           </div>
         </div>
       </Link>
 
-      <button className="mt-4 flex w-full items-center justify-center gap-1.5 rounded-lg bg-astra-gradient py-2 text-xs font-semibold text-white transition-opacity hover:opacity-90">
-        <ShoppingCart className="h-3.5 w-3.5" /> Add to Cart
+      <button
+        onClick={handleAddToCart}
+        disabled={cartState === "loading" || cartState === "added"}
+        className="mt-4 flex w-full items-center justify-center gap-1.5 rounded-lg bg-astra-gradient py-2 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-70"
+      >
+        {cartState === "added" ? (
+          <>
+            <Check className="h-3.5 w-3.5" /> Added to Cart
+          </>
+        ) : cartState === "error" ? (
+          "Couldn't add — try again"
+        ) : (
+          <>
+            <ShoppingCart className="h-3.5 w-3.5" /> {cartState === "loading" ? "Adding…" : "Add to Cart"}
+          </>
+        )}
       </button>
     </section>
   );

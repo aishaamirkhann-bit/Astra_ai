@@ -1,11 +1,51 @@
-node_modules
-.next
-dist
-build
-.envvenv/
+# Dependencies and virtual environments
+node_modules/
+.venv/
+venv/
+env/
+
+# Next.js and build output
+.next/
+out/
+dist/
+build/
+playwright-report/
+test-results/
+.playwright-browsers/
+
+# Environment files and secrets
+.env
+.env.*
+!.env.example
+!.env.production.example
+!.env.local.example
+
+# Python caches and local databases
 __pycache__/
-*.pyc
-.env
-astra-backend/.env
-.env
-astra-backend/.env
+*.py[cod]
+.pytest_cache/
+.test-tmp/
+.backend-test-cache/
+*.db
+*.sqlite
+*.sqlite3
+.coverage
+htmlcov/
+
+# Logs, editors, and OS files
+*.log
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Database backups
+backups/

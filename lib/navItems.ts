@@ -8,6 +8,8 @@ import {
   Wallet,
   Package,
   MessageSquare,
+  Bell,
+  Store,
 } from "lucide-react";
 
 export const NAV_ITEMS = [
@@ -19,5 +21,7 @@ export const NAV_ITEMS = [
   { label: "My Goals", href: "/goals", icon: Target },
   { label: "Wallet", href: "/wallet", icon: Wallet },
   { label: "Orders", href: "/orders", icon: Package },
+  { label: "Notifications", href: "/notifications", icon: Bell },
   { label: "Messages", href: "/messages", icon: MessageSquare },
+  { label: "Seller Dashboard", href: "/seller/dashboard", icon: Store },
 ] as const;

@@ -1,9 +1,9 @@
+/* Space Grotesk (display, technical/geometric) + Inter (body) + JetBrains Mono (data/timers/logs) */
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-/* Space Grotesk (display, technical/geometric) + Inter (body) + JetBrains Mono (data/timers/logs) */
-@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap");
 
 :root {
   --font-display: "Space Grotesk", sans-serif;
@@ -76,6 +76,7 @@ body {
   background-color: rgb(var(--base-950));
   color: rgb(var(--ink-100));
   font-family: var(--font-body);
+  overflow-x: hidden;
   transition: background-color 0.25s ease, color 0.25s ease;
 }
 
@@ -122,4 +123,43 @@ body {
   background-color: rgb(var(--base-700));
   background-size: cover;
   background-position: center;
+}
+
+/* Dual-thumb price range used by the category catalogue toolbar. */
+.dual-range {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  pointer-events: none;
+}
+.dual-range::-webkit-slider-runnable-track { height: 6px; background: transparent; }
+.dual-range::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -6px;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(var(--astra-cyan));
+  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.18);
+  cursor: grab;
+  pointer-events: auto;
+}
+.dual-range-max::-webkit-slider-thumb { background: #9867ef; }
+.dual-range::-moz-range-track { height: 6px; background: transparent; }
+.dual-range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(var(--astra-cyan));
+  cursor: grab;
+  pointer-events: auto;
+}
+.dual-range-max::-moz-range-thumb { background: #9867ef; }
+@media print {
+  body * { visibility: hidden !important; }
+  .receipt-panel, .receipt-panel * { visibility: visible !important; }
+  .receipt-panel { position: absolute !important; inset: 0 !important; width: 100% !important; max-width: none !important; background: white !important; color: black !important; }
 }

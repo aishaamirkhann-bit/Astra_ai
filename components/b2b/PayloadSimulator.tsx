@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Terminal, Play, CheckCircle2, PauseCircle, XCircle } from "lucide-react";
+import { Terminal, Play, CheckCircle2, PauseCircle, XCircle, HelpCircle } from "lucide-react";
+import { evaluateB2bPayload } from "@/lib/api";
+import type { B2bEvaluation } from "@/lib/types";
 
 const PROTOCOLS = ["UCP", "ACP"] as const;
 
@@ -29,53 +31,63 @@ const SAMPLE_PAYLOADS: Record<(typeof PROTOCOLS)[number], string> = {
   ),
 };
 
-type Verdict = "approve" | "hold" | "reject" | null;
+type Verdict = "approve" | "hold" | "reject";
 
 const VERDICT_META: Record<
-  Exclude<Verdict, null>,
-  { label: string; icon: typeof CheckCircle2; className: string; reason: string }
+  Verdict,
+  { icon: typeof CheckCircle2; className: string }
 > = {
   approve: {
-    label: "approve",
     icon: CheckCircle2,
     className: "text-signal-good bg-signal-good/10 border-signal-good/30",
-    reason: "All deterministic rules passed; no contradictions found; seller trust above threshold.",
   },
   hold: {
-    label: "hold",
     icon: PauseCircle,
     className: "text-signal-hold bg-signal-hold/10 border-signal-hold/30",
-    reason: "Price exceeds weekly spend cap — routed to human approval before execution.",
   },
   reject: {
-    label: "reject",
     icon: XCircle,
     className: "text-signal-reject bg-signal-reject/10 border-signal-reject/30",
-    reason: "Seller trust score below minimum threshold for unattended agent checkout.",
   },
 };
 
 export default function PayloadSimulator() {
   const [protocol, setProtocol] = useState<(typeof PROTOCOLS)[number]>("UCP");
   const [payload, setPayload] = useState(SAMPLE_PAYLOADS.UCP);
-  const [verdict, setVerdict] = useState<Verdict>(null);
+  const [evaluation, setEvaluation] = useState<B2bEvaluation | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
 
   const switchProtocol = (p: (typeof PROTOCOLS)[number]) => {
     setProtocol(p);
     setPayload(SAMPLE_PAYLOADS[p]);
-    setVerdict(null);
+    setEvaluation(null);
+    setError(null);
   };
 
-  const runSimulation = () => {
+  const runSimulation = async () => {
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(payload) as Record<string, unknown>;
+    } catch {
+      setError("Payload is not valid JSON — fix the syntax and try again.");
+      setEvaluation(null);
+      return;
+    }
     setRunning(true);
-    setVerdict(null);
-    setTimeout(() => {
-      const outcomes: Exclude<Verdict, null>[] = ["approve", "hold", "reject"];
-      setVerdict(outcomes[Math.floor(Math.random() * outcomes.length)]);
+    setError(null);
+    setEvaluation(null);
+    try {
+      setEvaluation(await evaluateB2bPayload(parsed));
+    } catch (requestError) {
+      setError((requestError as Error).message || "The consent adapter service is unavailable.");
+    } finally {
       setRunning(false);
-    }, 900);
+    }
   };
+
+  const verdictMeta = evaluation ? VERDICT_META[evaluation.verdict] ?? null : null;
+  const VerdictIcon = verdictMeta?.icon ?? HelpCircle;
 
   return (
     <section className="glass rounded-xl2 p-5">
@@ -87,7 +99,7 @@ export default function PayloadSimulator() {
           </h2>
         </div>
         <span className="rounded-md bg-base-800 px-2 py-1 font-mono text-[10px] text-ink-500">
-          POST /api/v1/consent/evaluate
+          POST /api/v1/b2b/evaluate
         </span>
       </div>
 
@@ -118,7 +130,7 @@ export default function PayloadSimulator() {
             className="scroll-thin w-full resize-none rounded-xl border border-base-600 bg-base-900 p-3 font-mono text-[11px] leading-relaxed text-ink-300 focus:outline-none"
           />
           <button
-            onClick={runSimulation}
+            onClick={() => void runSimulation()}
             disabled={running}
             className="mt-3 flex items-center gap-2 rounded-lg bg-astra-gradient px-4 py-2 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-60"
           >
@@ -131,24 +143,42 @@ export default function PayloadSimulator() {
           <p className="mb-3 text-[11px] font-medium uppercase tracking-wide text-ink-500">
             Live verdict
           </p>
-          {!verdict && !running && (
+          {!evaluation && !running && !error && (
             <p className="text-[11px] text-ink-700">Run a simulation to see the adapter's response.</p>
           )}
           {running && <p className="text-[11px] text-ink-500">Evaluating against rules engine…</p>}
-          {verdict && (
-            <div className={`rounded-xl border p-4 ${VERDICT_META[verdict].className}`}>
-              <div className="flex items-center gap-2">
-                {(() => {
-                  const Icon = VERDICT_META[verdict].icon;
-                  return <Icon className="h-5 w-5" />;
-                })()}
-                <p className="font-display text-sm font-bold uppercase tracking-wide">
-                  {VERDICT_META[verdict].label}
-                </p>
+          {error && <p className="text-[11px] text-signal-reject">{error}</p>}
+          {evaluation && verdictMeta && (
+            <div className={`rounded-xl border p-4 ${verdictMeta.className}`}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <VerdictIcon className="h-5 w-5" />
+                  <p className="font-display text-sm font-bold uppercase tracking-wide">
+                    {evaluation.verdict}
+                  </p>
+                </div>
+                <span className="font-mono text-[10px] opacity-70">{evaluation.event_ref}</span>
               </div>
               <p className="mt-2 text-[11px] leading-relaxed opacity-90">
-                {VERDICT_META[verdict].reason}
+                {evaluation.reason}
               </p>
+              <ul className="mt-3 flex flex-col gap-1.5">
+                {evaluation.checks.map((check) => (
+                  <li key={check.rule} className="flex items-start gap-2 text-[10px] opacity-80">
+                    <span
+                      className={[
+                        "mt-0.5 rounded px-1 font-mono font-semibold uppercase",
+                        check.status === "pass" ? "bg-signal-good/15 text-signal-good" : check.status === "warn" ? "bg-signal-hold/15 text-signal-hold" : "bg-signal-reject/15 text-signal-reject",
+                      ].join(" ")}
+                    >
+                      {check.status}
+                    </span>
+                    <span>
+                      <span className="font-mono">{check.rule}</span> — {check.detail}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
         </div>
