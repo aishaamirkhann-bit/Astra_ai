@@ -48,4 +48,6 @@ class SensitiveEndpointRateLimitMiddleware(BaseHTTPMiddleware):
             return settings.CONSENT_RATE_LIMIT
         if path.endswith(("/auth/verify-otp", "/auth/resend-otp", "/auth/login", "/auth/forgot-password", "/auth/reset-password")):
             return settings.OTP_RATE_LIMIT
+        if "/voice/" in path:
+            return settings.OTP_RATE_LIMIT
         return 0

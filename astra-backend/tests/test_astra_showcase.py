@@ -38,7 +38,9 @@ def test_authenticity_includes_zk_stamp_and_deepfake_scan() -> None:
 
 def test_voice_intent_resolves_buy_with_budget() -> None:
     anonymous = TestClient(app)
-    result = anonymous.post("/api/v1/explore/intent", json={"query": "buy a gaming laptop under 200k"})
+    # /explore/intent is multipart (not JSON) so an optional image can travel
+    # alongside the transcript — send query as form data.
+    result = anonymous.post("/api/v1/explore/intent", data={"query": "buy a gaming laptop under 200k"})
     assert result.status_code == 200, result.text
     intent = result.json()
     assert intent["intent"] == "buy"
@@ -47,15 +49,30 @@ def test_voice_intent_resolves_buy_with_budget() -> None:
     assert intent["matched_product"] is not None
     assert intent["matched_product"]["price"] <= 200000
 
-    roman_urdu = anonymous.post("/api/v1/explore/intent", json={"query": "mujhe samsung phone kharido 150 hazar tak"})
+    roman_urdu = anonymous.post("/api/v1/explore/intent", data={"query": "mujhe samsung phone kharido 150 hazar tak"})
     assert roman_urdu.status_code == 200
     urdu_intent = roman_urdu.json()
     assert urdu_intent["intent"] == "buy"
     assert urdu_intent["budget"] == 150000
 
-    plain = anonymous.post("/api/v1/explore/intent", json={"query": "headphones"})
+    plain = anonymous.post("/api/v1/explore/intent", data={"query": "headphones"})
     assert plain.status_code == 200
     assert plain.json()["intent"] != "buy"
+
+
+def test_voice_intent_accepts_optional_image_signal() -> None:
+    """Image never used to reach intent resolution at all — now it can travel
+    alongside the transcript and widen product matching."""
+    anonymous = TestClient(app)
+    result = anonymous.post(
+        "/api/v1/explore/intent",
+        data={"query": "kharido"},
+        files={"image_file": ("watch-product.jpg", b"fake-image", "image/jpeg")},
+    )
+    assert result.status_code == 200, result.text
+    intent = result.json()
+    assert intent["query"] == "kharido"  # original transcript is echoed back, not the fused text
+    assert intent["category"] == "Audio & Wearables"
 
 
 def test_micro_settlements_are_zero_fee_multicurrency() -> None:

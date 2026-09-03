@@ -69,6 +69,24 @@ class Settings(BaseSettings):
     SMS_API_KEY: str = ""
     SMS_FROM_NUMBER: str = ""
 
+    # --- Text-to-speech (spoken replies). Empty PROVIDER = feature disabled, no 500s. ---
+    TTS_PROVIDER: str = ""
+    TTS_API_KEY: str = ""
+    TTS_VOICE: str = ""
+    TTS_MODEL: str = ""
+    TTS_TIMEOUT_SECONDS: float = 8.0
+
+    # --- Vision (image understanding for multimodal search). Same empty-key discipline. ---
+    VISION_PROVIDER: str = ""
+    VISION_API_KEY: str = ""
+    VISION_MODEL: str = ""
+    VISION_TIMEOUT_SECONDS: float = 8.0
+
+    # --- Multimodal fusion weights (text vs. voice-transcript vs. image labels). ---
+    FUSION_TEXT_WEIGHT: float = 1.0
+    FUSION_IMAGE_WEIGHT: float = 0.7
+    FUSION_VOICE_WEIGHT: float = 0.9
+
     # Optional AI seller-agent provider. Rules remain the safe fallback.
     GROQ_API_KEY: str = ""
     GROQ_MODEL: str = "llama-3.3-70b-versatile"

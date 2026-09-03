@@ -483,6 +483,50 @@ export interface VoiceIntentResult {
   confidence: number;
 }
 
+/** POST /voice/transcribe response. */
+export interface TranscribeResponse {
+  transcript: string;
+  language: string | null;
+  provider: string;
+}
+
+/** One resolved modality contributing to a fused /explore/search — see fusion_signals below. */
+export interface FusionSignal {
+  source: "text" | "voice" | "image";
+  text: string;
+  weight: number;
+  provider: string | null;
+  confidence: number | null;
+}
+
+/** POST /explore/search response shape (multimodal-aware). */
+export interface SearchResponse {
+  total_results: number;
+  current_page: number;
+  total_pages: number;
+  query: string | null;
+  items: ExploreProductSummary[];
+  fusion_signals: FusionSignal[];
+  image_labels: string[];
+}
+
+/** Minimal product shape returned by /explore/search — matches ProductSchema on the backend. */
+export interface ExploreProductSummary {
+  id: string;
+  title: string;
+  category: string;
+  price: number;
+  formatted_price: string;
+  rating: number;
+  total_reviews: number;
+  seller_name: string;
+  is_verified_seller: boolean;
+  badge: string | null;
+  image_url: string;
+  semantic_tags: string[];
+  trust: number;
+}
+
 /** Cross-border zero-fee micro-escrow settlement simulation. */
 export interface MicroSettlements {
   reference: string;

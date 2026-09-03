@@ -1,6 +1,7 @@
 from app.schemas.requests import ExploreSearchRequest, QueryType, SortBy
 from app.schemas.responses import (
     BudgetRecommendationResponse,
+    FusionSignalSchema,
     ProductDetailSchema,
     ProductSchema,
     SearchResponse,
@@ -10,6 +11,7 @@ from app.schemas.responses import (
 __all__ = [
     "BudgetRecommendationResponse",
     "ExploreSearchRequest",
+    "FusionSignalSchema",
     "ProductDetailSchema",
     "ProductSchema",
     "QueryType",

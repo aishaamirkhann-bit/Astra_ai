@@ -60,8 +60,8 @@ export default function TopBar({ unreadNotifications = 0, user }: { unreadNotifi
   }
   function image(file: File) {
     setStatus(`Preparing ${file.name}…`);
-    if (pathname === "/explore") { dispatchEvent(new CustomEvent("astra:file-search", { detail: { file, queryType: "image" } })); dispatchEvent(new CustomEvent("astra:search-context", { detail: { mode: "image", label: file.name, previewUrl: URL.createObjectURL(file) } })); return; }
-    const reader = new FileReader(); reader.onload = () => { sessionStorage.setItem("astra:image-search", JSON.stringify({ name: file.name, type: file.type, data: reader.result })); router.push(`/explore?image_search=true&image_name=${encodeURIComponent(file.name)}`); }; reader.readAsDataURL(file);
+    if (pathname === "/explore") { dispatchEvent(new CustomEvent("astra:file-search", { detail: { file, queryType: "image", text: query } })); dispatchEvent(new CustomEvent("astra:search-context", { detail: { mode: "image", label: file.name, previewUrl: URL.createObjectURL(file) } })); return; }
+    const reader = new FileReader(); reader.onload = () => { sessionStorage.setItem("astra:image-search", JSON.stringify({ name: file.name, type: file.type, data: reader.result, text: query })); router.push(`/explore?image_search=true&image_name=${encodeURIComponent(file.name)}`); }; reader.readAsDataURL(file);
   }
   async function logout() { await logoutUser().catch(() => undefined); clearSession(); router.replace("/login"); router.refresh(); }
 

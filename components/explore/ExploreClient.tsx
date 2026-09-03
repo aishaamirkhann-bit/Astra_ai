@@ -91,12 +91,16 @@ export default function ExploreClient({
     }
   };
 
-  const searchWithFile = async (file: File, queryType: "voice" | "image") => {
+  const searchWithFile = async (file: File, queryType: "voice" | "image", textOverride?: string) => {
     setLoading(true);
     setError(null);
     const body = new FormData();
     body.append("query_type", queryType);
     body.append(queryType === "voice" ? "audio_file" : "image_file", file);
+    // Carry any typed/spoken text alongside the file so the backend fuses both
+    // signals instead of the file silently discarding it (see execute_search).
+    const textQuery = textOverride ?? query;
+    if (textQuery.trim()) body.append("text_query", textQuery);
     body.append("category", category || "All");
     body.append("min_price", String(minPrice));
     body.append("max_price", String(maxPrice));
@@ -125,11 +129,12 @@ export default function ExploreClient({
     if (!raw) return;
     window.sessionStorage.removeItem("astra:image-search");
     try {
-      const saved = JSON.parse(raw) as { name: string; type: string; data: string };
+      const saved = JSON.parse(raw) as { name: string; type: string; data: string; text?: string };
       fetch(saved.data).then((response) => response.blob()).then((blob) => {
         const file = new File([blob], saved.name, { type: saved.type || blob.type });
         setSearchContext({ mode: "image", label: saved.name, previewUrl: URL.createObjectURL(blob) });
-        void searchWithFile(file, "image");
+        if (saved.text) setQuery(saved.text);
+        void searchWithFile(file, "image", saved.text);
       }).catch(() => setError("Could not restore the selected image search."));
     } catch { setError("Could not restore the selected image search."); }
     // This one-shot handoff intentionally runs only when Explore mounts.
@@ -186,8 +191,8 @@ export default function ExploreClient({
       setQuery((event as CustomEvent<{ query: string }>).detail.query);
     };
     const handleFileSearch = (event: Event) => {
-      const detail = (event as CustomEvent<{ file: File; queryType: "voice" | "image" }>).detail;
-      void searchWithFile(detail.file, detail.queryType);
+      const detail = (event as CustomEvent<{ file: File; queryType: "voice" | "image"; text?: string }>).detail;
+      void searchWithFile(detail.file, detail.queryType, detail.text);
     };
     const handleSearchContext = (event: Event) => setSearchContext((event as CustomEvent<{ mode: "voice" | "image"; label: string; previewUrl?: string }>).detail);
     window.addEventListener("astra:search", handleSearch);
