@@ -288,6 +288,10 @@ Full interactive reference: `http://localhost:8000/docs` (Swagger/OpenAPI) once 
 
 ![ASTRA AI Chatbot](Screenshot/chatbot.png)
 
+### 🤝 A2A Autonomous Negotiation
+
+![ASTRA AI A2A Autonomous Negotiation](Screenshot/A2A%20Autonomous%20Negotiation.jpeg)
+
 ### 🔐 Trust & Authenticity
 
 ![ASTRA AI Trust Check](Screenshot/astracheck.png)
