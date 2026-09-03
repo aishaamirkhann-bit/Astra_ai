@@ -34,6 +34,8 @@ import type {
   DirectConversation,
   DirectMessageOut,
   VoiceIntentResult,
+  TranscribeResponse,
+  SearchResponse,
   MicroSettlements,
   RemittanceContext,
   SwarmTrace,
@@ -409,8 +411,71 @@ export async function pingBackendHealth(): Promise<{ ok: boolean; latencyMs: num
   }
 }
 
-export function parseVoiceIntent(query: string): Promise<VoiceIntentResult> {
-  return apiFetch<VoiceIntentResult>("/explore/intent", { method: "POST", body: JSON.stringify({ query }) });
+export function parseVoiceIntent(query: string, imageFile?: File): Promise<VoiceIntentResult> {
+  // /explore/intent is multipart (not JSON) so an optional image can travel
+  // alongside the transcript — apiFetch can't be reused here since it hardcodes
+  // Content-Type: application/json (see the streamChat escape hatch below).
+  const body = new FormData();
+  body.append("query", query);
+  if (imageFile) body.append("image_file", imageFile);
+  return fetch(`${API_URL}/api/v1/explore/intent`, { method: "POST", credentials: "include", body }).then((res) => {
+    if (!res.ok) throw new Error("Voice intent request failed");
+    return res.json() as Promise<VoiceIntentResult>;
+  });
+}
+
+/** Multipart upload to /voice/transcribe — never goes through apiFetch (no JSON Content-Type, and the body is a file, not a request-blob). */
+export function transcribeAudio(audio: Blob, filename = "clip.webm"): Promise<TranscribeResponse> {
+  const body = new FormData();
+  body.append("audio", audio, filename);
+  return fetch(`${API_URL}/api/v1/voice/transcribe`, { method: "POST", credentials: "include", body }).then((res) => {
+    if (!res.ok) throw new Error("Transcription failed");
+    return res.json() as Promise<TranscribeResponse>;
+  });
+}
+
+/** POSTs to /voice/synthesize and resolves the raw audio blob — the response is audio bytes, not JSON, so apiFetch (which always calls .json()) can't be reused. */
+export function synthesizeSpeech(text: string, voice?: string): Promise<Blob> {
+  return fetch(`${API_URL}/api/v1/voice/synthesize`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, voice }),
+  }).then((res) => {
+    if (!res.ok) throw new Error(res.status === 501 ? "Spoken replies are not configured" : "Speech synthesis failed");
+    return res.blob();
+  });
+}
+
+/** Single FormData search carrying text + audio + image together — whichever are present get fused server-side (see execute_search). Replaces separate single-modality calls. */
+export function multimodalSearch(params: {
+  textQuery?: string;
+  audioFile?: File | Blob;
+  imageFile?: File;
+  category?: string;
+  minPrice?: number;
+  maxPrice?: number;
+  semanticTags?: string[];
+  sortBy?: string;
+  page?: number;
+  limit?: number;
+}): Promise<SearchResponse> {
+  const body = new FormData();
+  body.append("query_type", "multimodal");
+  if (params.textQuery) body.append("text_query", params.textQuery);
+  if (params.audioFile) body.append("audio_file", params.audioFile, "clip.webm");
+  if (params.imageFile) body.append("image_file", params.imageFile);
+  body.append("category", params.category ?? "All");
+  body.append("min_price", String(params.minPrice ?? 0));
+  body.append("max_price", String(params.maxPrice ?? 500000));
+  body.append("sort_by", params.sortBy ?? "most_relevant");
+  body.append("page", String(params.page ?? 1));
+  body.append("limit", String(params.limit ?? 50));
+  (params.semanticTags ?? []).forEach((tag) => body.append("semantic_tags", tag));
+  return fetch(`${API_URL}/api/v1/explore/search`, { method: "POST", credentials: "include", body }).then((res) => {
+    if (!res.ok) throw new Error("Search service is unavailable");
+    return res.json() as Promise<SearchResponse>;
+  });
 }
 
 export function getMicroSettlements(amount?: number): Promise<MicroSettlements> {

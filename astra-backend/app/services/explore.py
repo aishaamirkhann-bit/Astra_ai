@@ -1,27 +1,70 @@
 import re
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from typing import Any
 
 from fastapi import HTTPException, UploadFile, status
 
+from app.core.config import settings
 from app.repository import product_repository
 from app.schemas.explore import ExploreSearchRequest, ProductDetailSchema, QueryType, SortBy
+from app.services import vision as vision_service
+from app.services import voice_service
+
+
+@dataclass
+class FusionSignal:
+    """One resolved modality contributing to a search — carries its own weight
+    so an image guess doesn't outrank explicit typed text."""
+
+    source: str  # "text" | "voice" | "image"
+    text: str
+    weight: float
+    provider: str | None = None
+    confidence: float | None = None
+
+
+@dataclass
+class ImageQueryResult:
+    query: str
+    labels: list[str] = field(default_factory=list)
+    provider: str | None = None
+    confidence: float | None = None
 
 
 async def process_voice_query(audio_file: UploadFile) -> str:
-    """Placeholder for Whisper/STT; the returned text is deterministic for local development."""
+    """Transcribe via the configured STT provider; falls back to the original
+    deterministic placeholder when STT_PROVIDER is unset (or the call fails) —
+    a test pins this exact fallback string, so it must never change."""
     if audio_file.content_type not in {"audio/mpeg", "audio/wav", "audio/ogg", "audio/webm"}:
         raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Unsupported audio format")
-    await audio_file.read()
-    return "gaming laptop 200k ke under"
+    audio_bytes = await audio_file.read()
+    transcript = voice_service.transcribe(audio_bytes, audio_file.content_type)
+    return transcript if transcript is not None else "gaming laptop 200k ke under"
 
 
-async def extract_image_features(image_file: UploadFile) -> str:
-    """Use local filename/category signals until a production vision encoder is connected."""
+async def extract_image_features(image_file: UploadFile) -> ImageQueryResult:
+    """Use the configured vision provider when available; otherwise fall back to
+    the original filename/category heuristic (kept verbatim — a test pins it)."""
     if not image_file.content_type or not image_file.content_type.startswith("image/"):
         raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Unsupported image format")
     filename = (image_file.filename or "").lower()
-    await image_file.read()
+    image_bytes = await image_file.read()
+
+    vision_result = vision_service.analyze_image(image_bytes, filename)
+    if vision_result is not None:
+        return ImageQueryResult(
+            query=vision_result.query,
+            labels=vision_result.labels,
+            provider=vision_result.provider,
+            confidence=vision_result.confidence,
+        )
+
+    query = _guess_image_query_from_filename(filename)
+    return ImageQueryResult(query=query, labels=[query])
+
+
+def _guess_image_query_from_filename(filename: str) -> str:
     if "samsung" in filename:
         return "samsung smartphone"
     if any(term in filename for term in ("headphone", "earbud")):
@@ -82,9 +125,13 @@ CATEGORY_TERMS = {
 }
 
 
-def resolve_purchase_intent(query: str) -> dict[str, Any]:
-    """Voice-to-Action: parse action/budget/category and pick the best product."""
-    normalized, budget, _tags = parse_query_intent(query)
+def resolve_purchase_intent(query: str, image_labels: list[str] | None = None) -> dict[str, Any]:
+    """Voice-to-Action: parse action/budget/category and pick the best product.
+    Optionally widened with image-derived labels so intent resolution is
+    multimodal rather than text-only; the labels only add search signal —
+    the response still echoes the original spoken/typed query."""
+    fusion_text = f"{query} {' '.join(image_labels)}".strip() if image_labels else query
+    normalized, budget, _tags = parse_query_intent(fusion_text)
     bare_amount = re.search(r"(?:rs\.?|rupees|paise)?\s*(\d{2,7}(?:\.\d+)?)\s*(k|thousand|hazar|lac|lakh)?", normalized)
     if budget is None and bare_amount:
         budget = float(bare_amount.group(1))
@@ -180,12 +227,23 @@ def list_products() -> list[dict[str, Any]]:
     return [_to_response_product(product) for product in product_repository.list_products()]
 
 
-def hybrid_vector_search(query: str, request: ExploreSearchRequest) -> list[dict[str, Any]]:
-    """Combine lexical overlap with a deterministic semantic proxy, then apply strict filters."""
-    normalized, inferred_budget, inferred_tags = parse_query_intent(query)
+def hybrid_vector_search(signals: Sequence[FusionSignal], request: ExploreSearchRequest) -> list[dict[str, Any]]:
+    """Fuse whatever signals are present (text + voice transcript + image labels)
+    into one weighted lexical score, then apply the same strict filters as before.
+
+    For a single signal this reduces to exactly the original unweighted scoring
+    (the weight cancels out of the average), so single-modality search behaviour
+    is unchanged; with several signals present, each contributes proportionally
+    to its FUSION_*_WEIGHT so an image guess never outranks explicit typed text.
+    """
+    combined_text = " ".join(signal.text for signal in signals if signal.text).strip()
+    normalized, inferred_budget, inferred_tags = parse_query_intent(combined_text)
     max_price = min(request.max_price, inferred_budget) if inferred_budget else request.max_price
     requested_tags = {tag.strip().lower() for tag in request.semantic_tags if tag.strip()} | {tag.lower() for tag in inferred_tags}
     category = request.category.lower()
+
+    weighted_signals = [signal for signal in signals if signal.text]
+    total_weight = sum(signal.weight for signal in weighted_signals) or 1.0
 
     candidates = []
     for product in product_repository.list_products():
@@ -196,7 +254,10 @@ def hybrid_vector_search(query: str, request: ExploreSearchRequest) -> list[dict
         product_tags = {tag.strip().lower() for tag in product["semantic_tags"]}
         if requested_tags and not requested_tags.issubset(product_tags):
             continue
-        lexical = _keyword_score(normalized, product)
+        lexical = sum(
+            signal.weight * _keyword_score(signal.text.lower().replace(",", ""), product)
+            for signal in weighted_signals
+        ) / total_weight
         tag_match = bool(requested_tags.intersection(product_tags))
         if normalized.strip() and lexical == 0 and not tag_match:
             continue
@@ -213,15 +274,51 @@ def hybrid_vector_search(query: str, request: ExploreSearchRequest) -> list[dict
     return [_to_response_product(product) for _, product in candidates]
 
 
-async def execute_search(request: ExploreSearchRequest, audio_file: UploadFile | None, image_file: UploadFile | None) -> tuple[list[dict[str, Any]], str]:
-    if request.query_type == QueryType.VOICE:
-        if audio_file is None:
-            raise HTTPException(status_code=422, detail="audio_file is required for voice searches")
-        query = await process_voice_query(audio_file)
-    elif request.query_type == QueryType.IMAGE:
-        if image_file is None:
-            raise HTTPException(status_code=422, detail="image_file is required for image searches")
-        query = await extract_image_features(image_file)
-    else:
-        query = request.text_query or ""
-    return hybrid_vector_search(query, request), query
+@dataclass
+class FusedSearchResult:
+    results: list[dict[str, Any]]
+    query: str
+    signals: list[FusionSignal]
+    image_labels: list[str]
+
+
+async def execute_search(
+    request: ExploreSearchRequest,
+    audio_file: UploadFile | None,
+    image_file: UploadFile | None,
+) -> FusedSearchResult:
+    """Fuse every signal present in the request instead of picking exactly one
+    modality: text_query, an uploaded audio_file, and an uploaded image_file
+    can now all arrive together (query_type=multimodal) or individually
+    (query_type=text|voice|image, which additionally enforces that its file is
+    present, preserving the original per-mode validation)."""
+    if request.query_type == QueryType.VOICE and audio_file is None:
+        raise HTTPException(status_code=422, detail="audio_file is required for voice searches")
+    if request.query_type == QueryType.IMAGE and image_file is None:
+        raise HTTPException(status_code=422, detail="image_file is required for image searches")
+
+    signals: list[FusionSignal] = []
+    image_labels: list[str] = []
+
+    text_query = (request.text_query or "").strip()
+    if text_query:
+        signals.append(FusionSignal(source="text", text=text_query, weight=settings.FUSION_TEXT_WEIGHT))
+
+    if audio_file is not None:
+        transcript = await process_voice_query(audio_file)
+        signals.append(FusionSignal(source="voice", text=transcript, weight=settings.FUSION_VOICE_WEIGHT))
+
+    if image_file is not None:
+        image_result = await extract_image_features(image_file)
+        signals.append(FusionSignal(
+            source="image", text=image_result.query, weight=settings.FUSION_IMAGE_WEIGHT,
+            provider=image_result.provider, confidence=image_result.confidence,
+        ))
+        image_labels = image_result.labels
+
+    if not signals:
+        signals.append(FusionSignal(source="text", text="", weight=settings.FUSION_TEXT_WEIGHT))
+
+    resolved_query = " ".join(signal.text for signal in signals if signal.text).strip()
+    results = hybrid_vector_search(signals, request)
+    return FusedSearchResult(results=results, query=resolved_query, signals=signals, image_labels=image_labels)

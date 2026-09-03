@@ -24,6 +24,16 @@ class ProductDetailSchema(ProductSchema):
     fit: str
 
 
+class FusionSignalSchema(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source: str  # "text" | "voice" | "image"
+    text: str
+    weight: float = Field(ge=0)
+    provider: str | None = None
+    confidence: float | None = Field(default=None, ge=0, le=1)
+
+
 class SearchResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -32,6 +42,8 @@ class SearchResponse(BaseModel):
     total_pages: int = Field(ge=0)
     query: str | None = None
     items: list[ProductSchema]
+    fusion_signals: list[FusionSignalSchema] = Field(default_factory=list)
+    image_labels: list[str] = Field(default_factory=list)
 
 
 class WalletResponse(BaseModel):

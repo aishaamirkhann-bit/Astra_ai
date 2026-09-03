@@ -8,6 +8,7 @@ class QueryType(str, Enum):
     TEXT = "text"
     VOICE = "voice"
     IMAGE = "image"
+    MULTIMODAL = "multimodal"
 
 
 class SortBy(str, Enum):

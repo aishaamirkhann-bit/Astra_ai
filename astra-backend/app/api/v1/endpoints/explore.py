@@ -1,25 +1,30 @@
 from typing import Annotated
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import ValidationError
 
 from app.schemas.explore import BudgetRecommendationResponse, ExploreSearchRequest, ProductDetailSchema, ProductSchema, SearchResponse, WalletResponse
 from app.schemas.categories import CategoryProductsResponse, CategorySchema
 from app.repository import product_repository
 from app.services.budget import get_available_balance, recommend_with_budget
-from app.services.explore import execute_search, get_product, list_products, resolve_purchase_intent
+from app.services.explore import execute_search, extract_image_features, get_product, list_products, resolve_purchase_intent
 
 router = APIRouter(prefix="/explore", tags=["Explore"])
 
 
-class VoiceIntentRequest(BaseModel):
-    query: str = Field(min_length=1, max_length=400)
-
-
 @router.post("/intent")
-async def voice_intent(payload: VoiceIntentRequest) -> dict:
-    """Voice-to-Action: extract budget/category/action and the best matching product."""
-    return resolve_purchase_intent(payload.query)
+async def voice_intent(
+    query: Annotated[str, Form(min_length=1, max_length=400)],
+    image_file: UploadFile | None = File(default=None),
+) -> dict:
+    """Voice-to-Action: extract budget/category/action and the best matching product.
+    Multipart (not JSON) so an optional image can travel alongside the transcript —
+    previously an image could never reach intent resolution at all."""
+    image_labels = None
+    if image_file is not None:
+        image_result = await extract_image_features(image_file)
+        image_labels = image_result.labels
+    return resolve_purchase_intent(query, image_labels)
 
 
 @router.get("/categories", response_model=list[CategorySchema])
@@ -123,14 +128,22 @@ async def search(
         })
     except ValidationError as error:
         raise HTTPException(status_code=422, detail=error.errors()) from error
-    results, resolved_query = await execute_search(request, audio_file, image_file)
+    fused = await execute_search(request, audio_file, image_file)
     start = (request.page - 1) * request.limit
-    items = results[start : start + request.limit]
-    total_pages = (len(results) + request.limit - 1) // request.limit
+    items = fused.results[start : start + request.limit]
+    total_pages = (len(fused.results) + request.limit - 1) // request.limit
     return SearchResponse(
-        total_results=len(results),
+        total_results=len(fused.results),
         current_page=request.page,
         total_pages=total_pages,
-        query=resolved_query,
+        query=fused.query,
         items=items,
+        fusion_signals=[
+            {
+                "source": signal.source, "text": signal.text, "weight": signal.weight,
+                "provider": signal.provider, "confidence": signal.confidence,
+            }
+            for signal in fused.signals if signal.text
+        ],
+        image_labels=fused.image_labels,
     )
