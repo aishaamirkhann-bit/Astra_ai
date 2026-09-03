@@ -53,3 +53,5 @@ backups/
 e2e/.auth/
 
 e2e/.auth/
+
+tsconfig.tsbuildinfo
