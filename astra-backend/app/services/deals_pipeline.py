@@ -105,10 +105,14 @@ def bootstrap_deals_data(db: Session) -> None:
                 product.stock_count = STOCK_BY_SLUG.get(item["id"], 10)
     db.flush()
 
-    # Pass 2 — seller metrics + initial market price observations.
+    # Pass 2 — seller metrics + initial market price observations. Keep both
+    # indexes because older databases may use a different seller_id for the
+    # same unique seller_name.
+    metrics_by_id = {metric.seller_id: metric for metric in db.scalars(select(SellerMetric)).all()}
+    metrics_by_name = {metric.seller_name: metric for metric in metrics_by_id.values()}
     for item in PRODUCTS:
         seller_id = _slug(item["seller_name"])
-        metric = db.get(SellerMetric, seller_id)
+        metric = metrics_by_id.get(seller_id) or metrics_by_name.get(item["seller_name"])
         target = float(item["trust"])
         seller_rating = min(100.0, target + (2.0 if item["is_verified_seller"] else -1.0))
         fulfillment = min(100.0, target + (1.0 if item["is_verified_seller"] else -2.0))
@@ -118,6 +122,8 @@ def bootstrap_deals_data(db: Session) -> None:
         if metric is None:
             metric = SellerMetric(seller_id=seller_id, seller_name=item["seller_name"])
             db.add(metric)
+            metrics_by_id[seller_id] = metric
+            metrics_by_name[item["seller_name"]] = metric
         metric.seller_rating = seller_rating
         metric.fulfillment_rate = fulfillment
         metric.authenticity_sentiment = authenticity
