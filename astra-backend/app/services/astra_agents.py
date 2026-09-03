@@ -96,6 +96,23 @@ def micro_settlements(amount: float, reference: str) -> dict:
     }
 
 
+def remittance_context(reference: str) -> dict:
+    """Static remittance metadata; it does not create or quote a transfer."""
+    return {
+        "reference": reference,
+        "status": "stub",
+        "source_country": "PK",
+        "source_currency": "PKR",
+        "destinations": [
+            {"country_code": "AE", "currency": "AED", "payout_methods": ["bank", "wallet"]},
+            {"country_code": "SA", "currency": "SAR", "payout_methods": ["bank", "wallet"]},
+            {"country_code": "US", "currency": "USD", "payout_methods": ["bank"]},
+        ],
+        "required_recipient_fields": ["full_name", "country_code", "payout_method"],
+        "compliance": {"kyc_required": True, "sanctions_screening": "not_started"},
+    }
+
+
 def restock_forecasts(orders: list, fallback_products: list[dict]) -> list[dict]:
     """Predictive replenishment intervals from the user's order history."""
     now = datetime.now(timezone.utc)

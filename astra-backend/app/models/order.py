@@ -26,6 +26,7 @@ class Order(Base):
     color = Column(Text, nullable=False, default="")
     storage = Column(Text, nullable=False, default="")
     price = Column(Float, nullable=False)
+    checkout_session_id = Column(Integer, ForeignKey("checkout_sessions.id", ondelete="SET NULL"), nullable=True, index=True)
     status = Column(Enum(OrderStatus), default=OrderStatus.PENDING_APPROVAL)
     # Escrow lifecycle: HELD while funds sit in reversible checkout,
     # RELEASED to the seller once confirmed, REFUNDED on reversal/dispute.
@@ -41,3 +42,4 @@ class Order(Base):
 
     owner = relationship("User", back_populates="orders")
     product = relationship("Product")
+    checkout_session = relationship("CheckoutSession", back_populates="orders")

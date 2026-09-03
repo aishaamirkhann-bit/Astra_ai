@@ -86,7 +86,17 @@ def test_timeline_and_ai_dispute_refund_flow() -> None:
             budget.current_spent = 0
             db.commit()
     try:
-        approved = buyer.post("/api/v1/approval/approve", json={"order_ref": order_ref})
+        consent = buyer.post("/api/v1/wallet/authorize-consent", json={
+            "amount": deal["price"],
+            "auth_method": "Voice",
+            "order_ref": order_ref,
+            "voice_transcript": f"I authorize payment of Rs. {int(deal['price'])}",
+        })
+        assert consent.status_code == 200, consent.text
+        approved = buyer.post("/api/v1/approval/approve", json={
+            "order_ref": order_ref,
+            "consent_id": consent.json()["consent_id"],
+        })
         assert approved.status_code == 200, approved.text
     finally:
         with SessionLocal() as db:

@@ -69,6 +69,7 @@ class FinancialConsentLog(Base):
     voice_transcript = Column(Text, nullable=True)
     status = Column(String(10), nullable=False)
     reference_order_id = Column(Integer, ForeignKey("orders.id", ondelete="SET NULL"), nullable=True)
+    reference_checkout_id = Column(Integer, ForeignKey("checkout_sessions.id", ondelete="SET NULL"), nullable=True)
     otp_code_hash = Column(Text, nullable=True)
     otp_expires_at = Column(DateTime(timezone=True), nullable=True)
     otp_attempts = Column(Integer, nullable=False, default=0)
@@ -79,8 +80,10 @@ class FinancialConsentLog(Base):
         CheckConstraint("amount > 0", name="ck_financial_consent_amount"),
         CheckConstraint("auth_method IN ('Voice', 'OTP')", name="ck_financial_consent_method"),
         CheckConstraint("status IN ('Approved', 'Rejected', 'Flagged')", name="ck_financial_consent_status"),
+        CheckConstraint("reference_order_id IS NULL OR reference_checkout_id IS NULL", name="ck_financial_consent_single_subject"),
         Index("ix_financial_consent_user_created", "user_id", "created_at"),
         Index("ix_financial_consent_order_status", "reference_order_id", "status", "consumed_at"),
+        Index("ix_financial_consent_checkout_status", "reference_checkout_id", "status", "consumed_at"),
     )
 
 

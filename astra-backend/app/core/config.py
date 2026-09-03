@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     FRONTEND_ORIGIN: str = "http://localhost:3000"
 
     APPROVAL_WINDOW_SECONDS: int = 30
+    CHECKOUT_SESSION_TTL_SECONDS: int = 600
 
     # --- Email OTP (2FA) ---
     OTP_LENGTH: int = 6

@@ -111,6 +111,39 @@ python -m app.db.seed
 uvicorn app.main:app --reload
 ```
 
+### Real OTP email
+
+Email delivery is configured through the backend environment and is used for
+login, registration, resend, and password-reset codes. Resend is preferred
+over SMTP when both are configured:
+
+```dotenv
+RESEND_API_KEY=re_...
+RESEND_FROM_EMAIL=ASTRA AI <no-reply@your-verified-domain.example>
+OTP_DEBUG_LOG=false
+```
+
+In Resend, verify the sending domain and add its DNS records before using a
+custom `RESEND_FROM_EMAIL`. The `onboarding@resend.dev` sender is only for
+sandbox testing and is restricted to the Resend account email.
+
+For Gmail instead, create a Google app password and configure:
+
+```dotenv
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=your-address@gmail.com
+SMTP_PASSWORD=your-16-character-app-password
+SMTP_FROM_EMAIL=your-address@gmail.com
+SMTP_FROM_NAME=ASTRA AI
+SMTP_USE_TLS=true
+OTP_DEBUG_LOG=false
+```
+
+Do not commit `.env` or provider credentials. In development, `OTP_DEBUG_LOG`
+may remain enabled and the `123456` OTP bypass remains available; both are
+disabled when `APP_ENV=production`.
+
 API docs auto-generate at: **http://localhost:8000/docs**
 
 Demo login: `aisha@astra.ai` / `demo1234`. Auth is strict JWT everywhere

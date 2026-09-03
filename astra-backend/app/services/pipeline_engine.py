@@ -35,9 +35,15 @@ class PipelineEngine:
             active_index = 5  # Reversible Checkout
             verdict_label = "Reversal Window Open"
         elif order.status == OrderStatus.CONFIRMED:
-            active_index = 6  # past the last node = everything done
-            verdict_label = "Confirmed"
-        else:  # CANCELLED
+            active_index = 6
+            verdict_label = "Confirmed — Ready for Dispatch"
+        elif order.status == OrderStatus.SHIPPED:
+            active_index = 6
+            verdict_label = "Shipped"
+        elif order.status == OrderStatus.DELIVERED:
+            active_index = 6
+            verdict_label = "Delivered"
+        else:
             active_index = 5
             verdict_label = "Cancelled — Refund Started"
 

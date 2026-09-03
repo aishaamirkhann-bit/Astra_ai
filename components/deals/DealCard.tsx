@@ -16,6 +16,12 @@ function urgencyCopy(deal: DealOut) {
   return `${deal.stock_remaining} units verified at this price`;
 }
 
+function trustTier(deal: DealOut) {
+  if (deal.trust.seller_verified && deal.trust.overall >= 90) return "Audited";
+  if (deal.trust.overall >= 80) return "Reviewed";
+  return "Provisional";
+}
+
 export default function DealCard({
   deal,
   onOpen,
@@ -55,6 +61,7 @@ export default function DealCard({
             </span>
             <div role="tooltip" className="pointer-events-none absolute right-0 top-9 z-20 w-64 translate-y-1 rounded-xl border border-white/10 bg-slate-950 p-3 text-left text-[10px] leading-5 text-slate-200 opacity-0 shadow-2xl transition group-hover/trust:translate-y-0 group-hover/trust:opacity-100 group-focus-within/trust:translate-y-0 group-focus-within/trust:opacity-100">
               <p className="font-semibold text-white">AI Trust Score breakdown</p>
+              <p>Trust tier: {trustTier(deal)}</p>
               <p>Seller fulfillment: {deal.trust.seller_fulfillment}%</p>
               <p>Authenticity sentiment: {deal.trust.authenticity_sentiment}%</p>
               <p>Price stability: {deal.trust.price_stability}%</p>

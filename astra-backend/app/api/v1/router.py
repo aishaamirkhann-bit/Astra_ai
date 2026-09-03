@@ -15,6 +15,7 @@ from app.api.v1.endpoints import (
     deals,
     orders,
     cart,
+    checkout,
     chat,
     b2b,
     messaging,
@@ -39,6 +40,7 @@ api_router.include_router(explore.router)
 api_router.include_router(deals.router)
 api_router.include_router(orders.router)
 api_router.include_router(cart.router)
+api_router.include_router(checkout.router)
 api_router.include_router(chat.router)
 api_router.include_router(b2b.router)
 api_router.include_router(messaging.router)

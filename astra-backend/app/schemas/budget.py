@@ -92,8 +92,16 @@ class RestockForecastOut(BaseModel):
     message: str
 
 
+class SavingPlanOut(BaseModel):
+    remaining_goal_amount: float
+    monthly_saving_capacity: float
+    recommended_monthly_deposit: float
+    estimated_months_to_fund: int | None
+
+
 class BudgetDashboardOut(BaseModel):
     budget: BudgetOut
     goals: list[ShoppingGoalOut]
     alerts: list[BudgetAlertOut]
     restock_forecasts: list[RestockForecastOut] = Field(default_factory=list)
+    saving_plan: SavingPlanOut

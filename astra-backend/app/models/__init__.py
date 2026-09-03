@@ -11,6 +11,7 @@ from app.models.pipeline import PipelineRun, PipelineStageLog, AuditLog
 from app.models.notification import Notification
 from app.models.deal import Deal, DealAuditLog, DealReservation, MarketPriceHistory, SellerMetric
 from app.models.cart import CartItem
+from app.models.checkout import CheckoutSession
 from app.models.trust import PlatformTrustMetric, SellerVerification, TrustAuditLog
 from app.models.budget import BudgetAlert, ShoppingGoal, UserBudget
 from app.models.chat import ChatConversation, ChatMessage
@@ -37,6 +38,7 @@ __all__ = [
     "DealAuditLog",
     "DealReservation",
     "CartItem",
+    "CheckoutSession",
     "SellerVerification",
     "TrustAuditLog",
     "PlatformTrustMetric",

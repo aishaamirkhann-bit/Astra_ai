@@ -26,6 +26,8 @@ import type {
   ProductDetail,
   Cart,
   CartCheckout,
+  CheckoutSession,
+  CheckoutSessionConfirmation,
   ChatConversation,
   AuditEntry,
   B2bEvaluation,
@@ -33,11 +35,12 @@ import type {
   DirectMessageOut,
   VoiceIntentResult,
   MicroSettlements,
+  RemittanceContext,
   SwarmTrace,
   ResolutionTimeline,
 } from "@/lib/types";
 // Set in .env.local — see lib/api.ts usage below.
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/api\/v1\/?$/, "");
 
 async function apiFetch<T>(path: string, init?: RequestInit, cookieHeader?: string): Promise<T> {
   const clientSide = typeof window !== "undefined" && !cookieHeader;
@@ -155,6 +158,17 @@ export function getHomePage(cookieHeader?: string): Promise<HomePageOut> {
   return apiFetch<HomePageOut>("/home", undefined, cookieHeader);
 }
 
+export type CategorySummary = {
+  id: string;
+  name: string;
+  slug: string;
+  product_count: number;
+};
+
+export function getCategories(cookieHeader?: string): Promise<CategorySummary[]> {
+  return apiFetch<CategorySummary[]>("/explore/categories", undefined, cookieHeader);
+}
+
 export function getExploreData(cookieHeader?: string): Promise<{ available_balance: number }> {
   return apiFetch<{ available_balance: number }>("/explore/wallet", undefined, cookieHeader);
 }
@@ -234,6 +248,10 @@ export function getCart(cookieHeader?: string): Promise<Cart> { return apiFetch<
 export function updateCartItem(itemId: number, quantity: number): Promise<Cart> { return apiFetch<Cart>(`/cart/${itemId}`, { method: "PUT", body: JSON.stringify({ quantity }) }); }
 export function removeCartItem(itemId: number): Promise<Cart> { return apiFetch<Cart>(`/cart/${itemId}`, { method: "DELETE" }); }
 export function checkoutCart(payload: { shipping_address: string; consent_id?: string }): Promise<CartCheckout> { return apiFetch<CartCheckout>("/cart/checkout", { method: "POST", body: JSON.stringify(payload) }); }
+export function createCheckoutSession(payload: { shipping_address: string }): Promise<CheckoutSession> { return apiFetch<CheckoutSession>("/checkout/session", { method: "POST", body: JSON.stringify(payload) }); }
+export function getCheckoutSession(checkoutRef: string): Promise<CheckoutSession> { return apiFetch<CheckoutSession>(`/checkout/session/${checkoutRef}`); }
+export function confirmCheckoutSession(checkoutRef: string, consentId: string): Promise<CheckoutSessionConfirmation> { return apiFetch<CheckoutSessionConfirmation>(`/checkout/session/${checkoutRef}/confirm`, { method: "POST", body: JSON.stringify({ consent_id: consentId }) }); }
+export function abandonCheckoutSession(checkoutRef: string): Promise<CheckoutSession> { return apiFetch<CheckoutSession>(`/checkout/session/${checkoutRef}/abandon`, { method: "POST" }); }
 export function getChatHistory(): Promise<ChatConversation[]> { return apiFetch<ChatConversation[]>("/chat/history"); }
 export function streamChat(payload: { message: string; conversation_id?: number }): Promise<Response> { return fetch(`${API_URL}/api/v1/chat/stream`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); }
 
@@ -399,11 +417,17 @@ export function getMicroSettlements(amount?: number): Promise<MicroSettlements> 
   return apiFetch<MicroSettlements>(`/wallet/micro-settlements${amount ? `?amount=${amount}` : ""}`);
 }
 
+export function getRemittanceContext(): Promise<RemittanceContext> {
+  return apiFetch<RemittanceContext>("/wallet/remittance-context");
+}
+
 export function getOrderSwarmLog(orderRef: string): Promise<SwarmTrace> {
   return apiFetch<SwarmTrace>(`/orders/${orderRef}/swarm`);
 }
 
-export function authorizeFinancialConsent(payload: { amount: number; auth_method: "Voice" | "OTP"; order_ref: string; voice_transcript?: string; consent_id?: string; otp_code?: string }): Promise<ConsentAuthorizationResponse> {
+type FinancialConsentSubject = { order_ref: string; checkout_ref?: never } | { checkout_ref: string; order_ref?: never };
+
+export function authorizeFinancialConsent(payload: { amount: number; auth_method: "Voice" | "OTP"; voice_transcript?: string; consent_id?: string; otp_code?: string } & FinancialConsentSubject): Promise<ConsentAuthorizationResponse> {
   return apiFetch<ConsentAuthorizationResponse>("/wallet/authorize-consent", { method: "POST", body: JSON.stringify(payload) });
 }
 

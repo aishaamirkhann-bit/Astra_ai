@@ -6,7 +6,17 @@ import { CheckCircle2, Globe2, KeyRound, Loader2, Mic, ShieldCheck, X } from "lu
 import { authorizeFinancialConsent, getMicroSettlements } from "@/lib/api";
 import type { MicroSettlements } from "@/lib/types";
 
-export default function FinancialConsentModal({ open, amount, orderRef, onClose, onAuthorized, initialTab = "Voice" }: { open: boolean; amount: number; orderRef: string; onClose: () => void; onAuthorized: (consentId: string) => Promise<void>; initialTab?: "Voice" | "OTP" }) {
+type FinancialConsentModalProps = {
+  open: boolean;
+  amount: number;
+  onClose: () => void;
+  onAuthorized: (consentId: string) => Promise<void>;
+  initialTab?: "Voice" | "OTP";
+} & ({ orderRef: string; checkoutRef?: never } | { checkoutRef: string; orderRef?: never });
+
+export default function FinancialConsentModal(props: FinancialConsentModalProps) {
+  const { open, amount, onClose, onAuthorized, initialTab = "Voice" } = props;
+  const reference = props.checkoutRef ?? props.orderRef ?? "this purchase";
   const [tab, setTab] = useState<"Voice" | "OTP">(initialTab);
   const [recording, setRecording] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -16,7 +26,12 @@ export default function FinancialConsentModal({ open, amount, orderRef, onClose,
   const [error, setError] = useState("");
   const [settlements, setSettlements] = useState<MicroSettlements | null>(null);
 
-  useEffect(() => { if (!open) { setOtp(""); setChallengeId(""); setDevOtp(""); setError(""); setRecording(false); setSettlements(null); } else { setTab(initialTab); } }, [open, initialTab]);
+  async function authorize(payload: { auth_method: "Voice" | "OTP"; voice_transcript?: string; consent_id?: string; otp_code?: string }) {
+    if (props.checkoutRef) return authorizeFinancialConsent({ amount, ...payload, checkout_ref: props.checkoutRef });
+    return authorizeFinancialConsent({ amount, ...payload, order_ref: props.orderRef! });
+  }
+
+  useEffect(() => { if (!open) { setOtp(""); setChallengeId(""); setDevOtp(""); setError(""); setRecording(false); setSettlements(null); } else { setTab(initialTab); } }, [open, initialTab, reference]);
 
   useEffect(() => {
     if (!open || amount <= 0) return;
@@ -29,7 +44,7 @@ export default function FinancialConsentModal({ open, amount, orderRef, onClose,
     setRecording(false); setBusy(true); setError("");
     try {
       const phrase = `I authorize payment of Rs. ${Math.round(amount)}`;
-      const result = await authorizeFinancialConsent({ amount, auth_method: "Voice", order_ref: orderRef, voice_transcript: phrase });
+      const result = await authorize({ auth_method: "Voice", voice_transcript: phrase });
       await onAuthorized(result.consent_id);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Voice authorization failed"); } finally { setBusy(false); }
   }
@@ -44,10 +59,10 @@ export default function FinancialConsentModal({ open, amount, orderRef, onClose,
     setBusy(true); setError("");
     try {
       if (!challengeId) {
-        const result = await authorizeFinancialConsent({ amount, auth_method: "OTP", order_ref: orderRef });
+        const result = await authorize({ auth_method: "OTP" });
         setChallengeId(result.consent_id); setDevOtp(result.dev_otp ?? "");
       } else {
-        const result = await authorizeFinancialConsent({ amount, auth_method: "OTP", order_ref: orderRef, consent_id: challengeId, otp_code: otp });
+        const result = await authorize({ auth_method: "OTP", consent_id: challengeId, otp_code: otp });
         await onAuthorized(result.consent_id);
       }
     } catch (cause) { setError(cause instanceof Error ? cause.message : "OTP authorization failed"); } finally { setBusy(false); }
@@ -59,7 +74,7 @@ export default function FinancialConsentModal({ open, amount, orderRef, onClose,
         <button onClick={onClose} className="absolute right-4 top-4 rounded-full p-2 text-slate-400 hover:bg-white/10 hover:text-white" aria-label="Close"><X className="h-4 w-4" /></button>
         <span className="grid h-11 w-11 place-items-center rounded-2xl bg-violet-500/20 text-violet-300"><ShieldCheck className="h-6 w-6" /></span>
         <h2 id="consent-title" className="mt-4 font-display text-xl font-bold text-white">Financial consent required</h2>
-        <p className="mt-1 text-sm text-slate-400">Securely authorize <strong className="text-white">Rs. {amount.toLocaleString()}</strong> for {orderRef || "this order"}.</p>
+        <p className="mt-1 text-sm text-slate-400">Securely authorize <strong className="text-white">Rs. {amount.toLocaleString()}</strong> for {reference}.</p>
       </div>
       <div className="p-4 sm:p-6">
         <div className="grid grid-cols-2 rounded-xl bg-slate-900 p-1"><button onClick={() => setTab("Voice")} className={`rounded-lg py-2 text-xs font-semibold ${tab === "Voice" ? "bg-violet-500 text-white" : "text-slate-400"}`}>Voice consent</button><button onClick={() => setTab("OTP")} className={`rounded-lg py-2 text-xs font-semibold ${tab === "OTP" ? "bg-violet-500 text-white" : "text-slate-400"}`}>6-digit OTP</button></div>
@@ -87,7 +102,7 @@ export default function FinancialConsentModal({ open, amount, orderRef, onClose,
             </div>)}
           </div>
         </div>}
-        <p className="mt-5 text-center text-[10px] text-slate-500">Encrypted authorization · Amount-bound · Single order use</p>
+        <p className="mt-5 text-center text-[10px] text-slate-500">Encrypted authorization · Amount-bound · Single-use</p>
       </div>
     </motion.section>
   </motion.div>}</AnimatePresence>;

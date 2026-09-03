@@ -3,9 +3,19 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ArrowRight, RefreshCw, Sparkles } from "lucide-react";
-import { CATEGORIES } from "@/lib/mockData";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+const CATEGORY_GRADIENTS: Record<string, string> = {
+  Mobiles: "linear-gradient(135deg, rgba(34,211,238,0.25), rgba(59,130,246,0.10))",
+  "Laptops & Computers": "linear-gradient(135deg, rgba(168,85,247,0.25), rgba(59,130,246,0.10))",
+  "Audio & Wearables": "linear-gradient(135deg, rgba(56,189,248,0.25), rgba(14,165,233,0.10))",
+  Jewelry: "linear-gradient(135deg, rgba(251,191,36,0.20), rgba(245,158,11,0.08))",
+  "Clothing & Fashion": "linear-gradient(135deg, rgba(244,114,182,0.22), rgba(168,85,247,0.10))",
+  "Makeup & Beauty": "linear-gradient(135deg, rgba(251,113,133,0.20), rgba(236,72,153,0.08))",
+  "Home Appliances": "linear-gradient(135deg, rgba(16,185,129,0.20), rgba(45,212,191,0.08))",
+  "Home & Living": "linear-gradient(135deg, rgba(250,204,21,0.18), rgba(34,197,94,0.08))",
+};
 
 type Category = { id: string; name: string; slug: string; product_count: number };
 
@@ -66,10 +76,10 @@ export default function CategoriesClient() {
       )}
       {!loading && !error && categories.length > 0 && <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
         {categories.map((category) => {
-          const visual = CATEGORIES.find((item) => item.name === category.name);
+          const background = CATEGORY_GRADIENTS[category.name] ?? "linear-gradient(135deg, rgba(148,163,184,0.18), rgba(15,23,42,0.08))";
           return (
             <Link key={category.id} href={`/categories/${category.slug}`} className="glass glass-hover group overflow-hidden rounded-xl2">
-              <div className="photo-frame relative aspect-[4/3]" style={{ backgroundImage: visual?.image ? `url(${visual.image})` : undefined }}>
+              <div className="photo-frame relative aspect-[4/3]" style={{ background }}>
                 <div className="absolute inset-0 bg-gradient-to-t from-base-950/50 via-transparent to-transparent" />
                 <span className="absolute left-3 top-3 rounded-full border border-white/15 bg-base-950/50 px-2 py-1 text-[10px] font-medium text-ink-100 backdrop-blur">Explore</span>
               </div>

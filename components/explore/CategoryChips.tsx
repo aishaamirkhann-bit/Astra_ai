@@ -1,6 +1,8 @@
 "use client";
 
-import { EXPLORE_CATEGORY_TAGS } from "@/lib/mockData";
+import { useEffect, useState } from "react";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export default function CategoryChips({
   selected,
@@ -9,6 +11,21 @@ export default function CategoryChips({
   selected: string | null;
   onSelect: (c: string | null) => void;
 }) {
+  const [categories, setCategories] = useState<string[]>([]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`${API_URL}/api/v1/explore/categories`, { signal: controller.signal, credentials: "include" })
+      .then((response) => {
+        if (!response.ok) throw new Error("Categories unavailable");
+        return response.json() as Promise<Array<{ name: string }>>;
+      })
+      .then((items) => setCategories(items.map((item) => item.name)))
+      .catch(() => setCategories([]));
+
+    return () => controller.abort();
+  }, []);
+
   return (
     <div className="flex flex-wrap gap-2">
       <button
@@ -22,7 +39,7 @@ export default function CategoryChips({
       >
         All
       </button>
-      {EXPLORE_CATEGORY_TAGS.map((c) => (
+      {categories.map((c) => (
         <button
           key={c}
           onClick={() => onSelect(c)}
