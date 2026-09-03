@@ -12,6 +12,8 @@ jobs:
     defaults:
       run:
         working-directory: astra-backend
+    env:
+      REFRESH_PRODUCTS_ON_STARTUP: "false"
     steps:
       - uses: actions/checkout@v4
 
@@ -26,20 +28,6 @@ jobs:
 
       - name: Seed demo data
         run: python -m app.db.seed
-
-      - name: Debug explore catalog (temporary)
-        run: |
-          python -c "
-          import os
-          from app.repository import product_repository, DATABASE_PATH, DATABASE_URL
-          print('cwd:', os.getcwd())
-          print('DATABASE_PATH:', DATABASE_PATH)
-          print('DATABASE_PATH exists:', DATABASE_PATH.exists())
-          print('DATABASE_URL (postgres override):', DATABASE_URL)
-          products = product_repository.list_products()
-          print('product count:', len(products))
-          print('product ids:', [p['id'] for p in products])
-          "
 
       - name: Run pytest
         run: python -m pytest tests/ -q -p no:cacheprovider
@@ -67,6 +55,8 @@ jobs:
   e2e:
     name: Browser E2E (Playwright)
     runs-on: ubuntu-latest
+    env:
+      REFRESH_PRODUCTS_ON_STARTUP: "false"
     steps:
       - uses: actions/checkout@v4
 
