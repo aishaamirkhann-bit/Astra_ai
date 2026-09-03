@@ -325,7 +325,7 @@ This repository is public for hackathon submission purposes.
 
 | Name | 
 |---|---|
-| Aisha Amir Khan | 
+| Aisha Amir | 
 | Syeda Gullay Zahra | 
 
 ## License
