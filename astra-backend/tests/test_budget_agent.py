@@ -1,3 +1,5 @@
+from math import ceil
+
 from app.core.database import SessionLocal
 from app.models.budget import BudgetAlert, ShoppingGoal
 from app.models.user import User
@@ -6,9 +8,17 @@ from app.models.user import User
 def test_budget_dashboard_returns_live_metrics(auth_client) -> None:
     response = auth_client.get("/api/v1/goals/budget")
     assert response.status_code == 200
-    budget = response.json()["budget"]
+    dashboard = response.json()
+    budget = dashboard["budget"]
     assert budget["monthly_limit"] > 0
     assert budget["available_safe_balance"] == max(budget["monthly_limit"] + budget["rollover_savings"] - budget["current_spent"], 0)
+    plan = dashboard["saving_plan"]
+    remaining = round(sum(goal["remaining_amount"] for goal in dashboard["goals"] if goal["status"] == "Active"), 2)
+    assert plan["remaining_goal_amount"] == remaining
+    assert plan["monthly_saving_capacity"] == budget["available_safe_balance"]
+    assert plan["recommended_monthly_deposit"] == min(remaining, budget["available_safe_balance"])
+    expected_months = 0 if remaining == 0 else ceil(remaining / budget["available_safe_balance"]) if budget["available_safe_balance"] else None
+    assert plan["estimated_months_to_fund"] == expected_months
 
 
 def test_create_update_and_match_verified_goal(auth_client) -> None:

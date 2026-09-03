@@ -1,15 +1,14 @@
 import re
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_role
-from app.models.order import Order, OrderStatus
+from app.models.order import Order
 from app.models.product import Product
 from app.models.user import User
-from app.services.audit import record_audit
+from app.services.checkout_fsm import dispatch_confirmed_order
 
 router = APIRouter(prefix="/seller", tags=["Seller Dashboard"])
 
@@ -92,11 +91,9 @@ def seller_orders(db: Session = Depends(get_db), seller: User = Depends(require_
 
 @router.post("/orders/{order_ref}/dispatch")
 def dispatch(order_ref: str, db: Session = Depends(get_db), seller: User = Depends(require_role("seller"))):
-    order = db.query(Order).join(Product).filter(Order.order_ref == order_ref, Product.seller_name == seller.name).first()
-    if not order: raise HTTPException(status_code=404, detail="Seller order not found")
-    if order.escrow_status != "HELD" or order.status in {OrderStatus.CANCELLED, OrderStatus.DELIVERED}:
-        raise HTTPException(status_code=409, detail="Order cannot be dispatched")
-    order.status, order.shipped_at = OrderStatus.SHIPPED, datetime.now(timezone.utc)
-    record_audit(db, event_type="seller.dispatch", endpoint=f"/api/v1/seller/orders/{order_ref}/dispatch", verdict="shipped", actor=f"seller:{seller.email}")
+    order = db.query(Order).join(Product).filter(Order.order_ref == order_ref, Product.seller_name == seller.name).with_for_update().first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Seller order not found")
+    dispatch_confirmed_order(db, order, f"seller:{seller.email}")
     db.commit()
-    return {"order_ref": order_ref, "order_status": "shipped", "escrow_status": "LOCKED"}
+    return {"order_ref": order_ref, "order_status": order.status.value, "escrow_status": order.escrow_status}

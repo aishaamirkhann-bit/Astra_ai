@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from math import ceil
 
 from fastapi import HTTPException
 from sqlalchemy import func, select
@@ -12,7 +13,7 @@ from app.models.order import Order, OrderStatus
 from app.models.product import Product
 from app.models.user import User
 from app.models.wallet import WalletLedgerEntry
-from app.schemas.budget import BudgetAlertOut, BudgetDashboardOut, BudgetOut, MatchedDealOut, ShoppingGoalCreate, ShoppingGoalOut, ShoppingGoalUpdate
+from app.schemas.budget import BudgetAlertOut, BudgetDashboardOut, BudgetOut, MatchedDealOut, SavingPlanOut, ShoppingGoalCreate, ShoppingGoalOut, ShoppingGoalUpdate
 from app.services import astra_agents
 from app.services.deals_pipeline import CATEGORY_MAP
 
@@ -139,6 +140,17 @@ def _restock_forecasts(db: Session, user: User) -> list[dict]:
     return astra_agents.restock_forecasts(orders, fallback)
 
 
+def saving_plan(budget: UserBudget, goals: list[ShoppingGoal]) -> SavingPlanOut:
+    remaining = round(sum(max(goal.target_price - goal.saved_amount, 0) for goal in goals if goal.status == "Active"), 2)
+    capacity = round(max(budget.monthly_limit + budget.rollover_savings - budget.current_spent, 0), 2)
+    return SavingPlanOut(
+        remaining_goal_amount=remaining,
+        monthly_saving_capacity=capacity,
+        recommended_monthly_deposit=min(remaining, capacity),
+        estimated_months_to_fund=0 if remaining == 0 else ceil(remaining / capacity) if capacity else None,
+    )
+
+
 def budget_dashboard(db: Session, user: User) -> BudgetDashboardOut:
     budget = ensure_budget_profile(db, user)
     matches = evaluate_user_matches(db, user)
@@ -157,6 +169,7 @@ def budget_dashboard(db: Session, user: User) -> BudgetDashboardOut:
             alert_type=alert.alert_type, message=alert.message,
             created_at=alert.created_at.replace(tzinfo=alert.created_at.tzinfo or timezone.utc).isoformat()) for alert in alerts],
         restock_forecasts=_restock_forecasts(db, user),
+        saving_plan=saving_plan(budget, goals),
     )
 
 

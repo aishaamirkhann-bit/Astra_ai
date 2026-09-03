@@ -23,7 +23,8 @@ from app.realtime.messaging_ws import router as messaging_ws_router
 from app.realtime.negotiation_ws import router as negotiation_ws_router
 from app.db.runtime_migrations import apply_sqlite_compatibility_migrations, migrate_legacy_wallet_data
 from app.services.deal_events import deal_event_bus
-from app.services.deals_pipeline import bootstrap_deals_data, evaluate_deals, finalize_reversal_orders, release_expired_reservations
+from app.services.checkout_fsm import expire_checkout_sessions, finalize_reversal_orders
+from app.services.deals_pipeline import bootstrap_deals_data, evaluate_deals, release_expired_reservations
 from app.services.market_feed import record_market_observations
 from app.services.budget_agent import evaluate_all_budget_matches
 from app.core.database import SessionLocal
@@ -79,6 +80,7 @@ async def lifespan(app: FastAPI):
         db = SessionLocal()
         try:
             bootstrap_deals_data(db)
+            expire_checkout_sessions(db)
             finalize_reversal_orders(db)
             record_market_observations(db)
             deal_events = [*release_expired_reservations(db), *evaluate_deals(db)]
@@ -89,6 +91,7 @@ async def lifespan(app: FastAPI):
     def run_deal_monitor_cycle() -> list:
         db = SessionLocal()
         try:
+            expire_checkout_sessions(db)
             finalize_reversal_orders(db)
             record_market_observations(db)
             deal_events = [*release_expired_reservations(db), *evaluate_deals(db)]
@@ -125,9 +128,12 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=settings.APP_NAME, version="0.1.0", lifespan=lifespan)
 
+allowed_origins = [origin.strip() for origin in settings.FRONTEND_ORIGIN.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.FRONTEND_ORIGIN],
+    allow_origins=allowed_origins,
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

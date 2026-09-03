@@ -1,24 +1,13 @@
 import { notFound } from "next/navigation";
 import PageShell from "@/components/PageShell";
 import CategoryProductsClient from "@/components/categories/CategoryProductsClient";
+import { getCategories } from "@/lib/api";
 
-const CATEGORIES = [
-  { slug: "mobiles", name: "Mobiles" },
-  { slug: "laptops-computers", name: "Laptops & Computers" },
-  { slug: "audio-wearables", name: "Audio & Wearables" },
-  { slug: "jewelry", name: "Jewelry" },
-  { slug: "clothing-fashion", name: "Clothing & Fashion" },
-  { slug: "makeup-beauty", name: "Makeup & Beauty" },
-  { slug: "home-appliances", name: "Home Appliances" },
-  { slug: "households", name: "Households" },
-];
+export const dynamicParams = true;
 
-export function generateStaticParams() {
-  return CATEGORIES.map((category) => ({ slug: category.slug }));
-}
-
-export default function CategoryPage({ params }: { params: { slug: string } }) {
-  const category = CATEGORIES.find((item) => item.slug === params.slug);
+export default async function CategoryPage({ params }: { params: { slug: string } }) {
+  const categories = await getCategories().catch(() => []);
+  const category = categories.find((item) => item.slug === params.slug);
   if (!category) return notFound();
 
   return (

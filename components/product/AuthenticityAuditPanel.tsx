@@ -37,16 +37,19 @@ export default function AuthenticityAuditPanel({ productSlug }: { productSlug: s
         <h2 className="flex items-center gap-2 font-display text-sm font-bold text-ink-100">
           <Fingerprint className="h-4 w-4 text-astra-cyan" /> Authenticity Audit
         </h2>
-        <span className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase ${RISK_STYLES[audit.risk_band]}`}>
-          Seller risk {audit.seller_risk_score}/100 · {audit.risk_band}
-        </span>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <span className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase ${RISK_STYLES[audit.risk_band]}`}>
+            Seller risk {audit.seller_risk_score}/100 · {audit.risk_band}
+          </span>
+          <span className="rounded-full border border-base-600 px-3 py-1 text-[9px] font-bold uppercase text-ink-500">ASTRA demo metadata · no public-chain verification</span>
+        </div>
       </div>
 
       {stamp && (
         <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-emerald-400/25 bg-emerald-400/5 px-3 py-2.5">
           <BadgeCheck className="h-4 w-4 shrink-0 text-emerald-400" />
           <div className="min-w-0">
-            <p className="text-[11px] font-bold text-emerald-400">Verified Cryptographic Stamp</p>
+            <p className="text-[11px] font-bold text-emerald-400">Cryptographic Stamp Metadata</p>
             <p className="truncate font-mono text-[9px] text-ink-500">{stamp.stamp_id} · {stamp.algorithm} · signed payload {stamp.signed_payload}… · attested by {stamp.attested_by}</p>
           </div>
         </div>
@@ -60,7 +63,7 @@ export default function AuthenticityAuditPanel({ productSlug }: { productSlug: s
         <div className="mt-3 grid gap-3 sm:grid-cols-3">
           {zk && (
             <div className="rounded-xl border border-base-600 bg-base-900/60 p-3">
-              <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-violet-400"><KeyRound className="h-3 w-3" /> ZK Verification</p>
+              <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-violet-400"><KeyRound className="h-3 w-3" /> ZK Verification Metadata</p>
               <p className="mt-2 font-mono text-[9px] text-ink-500">{zk.proof_id}</p>
               <p className="mt-1 text-[10px] text-ink-300">{zk.protocol} · circuit {zk.circuit}</p>
               <p className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-signal-good/10 px-2 py-0.5 text-[9px] font-bold uppercase text-signal-good">
@@ -72,7 +75,7 @@ export default function AuthenticityAuditPanel({ productSlug }: { productSlug: s
             <div className="rounded-xl border border-base-600 bg-base-900/60 p-3">
               <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-astra-cyan"><Fingerprint className="h-3 w-3" /> Seller Reputation Hash</p>
               <p className="mt-2 break-all font-mono text-[9px] text-ink-500">{audit.seller_reputation_hash}</p>
-              <p className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-astra-gradient-soft px-2 py-0.5 text-[9px] font-bold uppercase text-ink-100">On-chain anchored</p>
+              <p className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-astra-gradient-soft px-2 py-0.5 text-[9px] font-bold uppercase text-ink-100">No public-chain verification</p>
             </div>
           )}
           {scan && (

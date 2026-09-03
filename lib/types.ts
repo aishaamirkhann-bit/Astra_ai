@@ -39,6 +39,9 @@ export interface ProductDetail extends Product {
 export interface CartItem { id: number; product_slug: string; name: string; quantity: number; size: string; color: string; storage: string; unit_price: number; image: string; seller_name: string; seller_verified: boolean; stock_count: number; }
 export interface Cart { items: CartItem[]; total_quantity: number; subtotal: number; monthly_budget_limit: number; current_spent: number; exceeds_budget: boolean; shipping_address: string; }
 export interface CartCheckout { checkout_ref: string; order_refs: string[]; total: number; status: string; }
+export type CheckoutSessionStatus = "awaiting_consent" | "reversal_window_open" | "confirmed" | "cancelled" | "expired";
+export interface CheckoutSession { checkout_ref: string; total: number; shipping_address: string; status: CheckoutSessionStatus; expires_at: string; confirmed_at: string | null; cancelled_at: string | null; order_refs: string[]; }
+export interface CheckoutSessionConfirmation extends CheckoutSession { wallet_balance: number; created: boolean; }
 export interface ChatCard { slug: string; name: string; price: number; image: string; seller: string; trust: number; stock: number; }
 export interface ChatMessage { id: number | string; role: "user" | "assistant"; content: string; card_type: "product" | null; card: ChatCard | null; created_at?: string; }
 export interface ChatConversation { id: number; title: string; messages: ChatMessage[]; }
@@ -308,11 +311,19 @@ export interface RestockForecastOut {
   message: string;
 }
 
+export interface SavingPlan {
+  remaining_goal_amount: number;
+  monthly_saving_capacity: number;
+  recommended_monthly_deposit: number;
+  estimated_months_to_fund: number | null;
+}
+
 export interface BudgetDashboardOut {
   budget: BudgetOverview;
   goals: ShoppingGoalOut[];
   alerts: BudgetAlertOut[];
   restock_forecasts?: RestockForecastOut[];
+  saving_plan: SavingPlan;
 }
 
 export interface MatchedDealOut {
@@ -493,6 +504,21 @@ export interface MicroSettlements {
   }>;
   total_latency_ms: number;
   settled_at: string;
+}
+
+/** Static remittance capability metadata; it does not create a transfer. */
+export interface RemittanceContext {
+  reference: string;
+  status: "stub";
+  source_country: string;
+  source_currency: string;
+  destinations: Array<{
+    country_code: string;
+    currency: string;
+    payout_methods: Array<"bank" | "wallet">;
+  }>;
+  required_recipient_fields: string[];
+  compliance: { kyc_required: boolean; sanctions_screening: "not_started" };
 }
 
 /** Multi-Agent Swarm orchestration trace for order verification. */

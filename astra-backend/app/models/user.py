@@ -34,4 +34,5 @@ class User(Base):
     wallet = relationship("UserWallet", back_populates="owner", uselist=False)
     goals = relationship("Goal", back_populates="owner")
     orders = relationship("Order", back_populates="owner")
+    checkout_sessions = relationship("CheckoutSession", back_populates="owner")
     notifications = relationship("Notification", back_populates="owner")

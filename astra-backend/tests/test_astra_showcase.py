@@ -71,6 +71,20 @@ def test_micro_settlements_are_zero_fee_multicurrency() -> None:
     assert settlement["total_latency_ms"] < 1500
 
 
+def test_remittance_context_is_static_capability_metadata() -> None:
+    buyer = _login("aisha@astra.ai")
+    response = buyer.get("/api/v1/wallet/remittance-context")
+    assert response.status_code == 200, response.text
+    context = response.json()
+    assert context["reference"].startswith("wallet-")
+    assert context["status"] == "stub"
+    assert context["source_country"] == "PK"
+    assert context["source_currency"] == "PKR"
+    assert context["required_recipient_fields"] == ["full_name", "country_code", "payout_method"]
+    assert context["compliance"] == {"kyc_required": True, "sanctions_screening": "not_started"}
+    assert {destination["currency"] for destination in context["destinations"]} == {"AED", "SAR", "USD"}
+
+
 def test_budget_dashboard_includes_restock_forecasts() -> None:
     buyer = _login("aisha@astra.ai")
     response = buyer.get("/api/v1/goals/budget")
@@ -100,7 +114,17 @@ def _create_order(buyer: TestClient) -> tuple[str, float]:
             budget.current_spent = 0
             db.commit()
     try:
-        approved = buyer.post("/api/v1/approval/approve", json={"order_ref": order_ref})
+        consent = buyer.post("/api/v1/wallet/authorize-consent", json={
+            "amount": deal["price"],
+            "auth_method": "Voice",
+            "order_ref": order_ref,
+            "voice_transcript": f"I authorize payment of Rs. {int(deal['price'])}",
+        })
+        assert consent.status_code == 200, consent.text
+        approved = buyer.post("/api/v1/approval/approve", json={
+            "order_ref": order_ref,
+            "consent_id": consent.json()["consent_id"],
+        })
         assert approved.status_code == 200, approved.text
     finally:
         with SessionLocal() as db:

@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
 from app.main import app
+from app.repository import CATEGORY_NAMES, product_repository
 
 
 client = TestClient(app)
@@ -43,20 +44,20 @@ def test_product_detail_endpoint_returns_product() -> None:
 def test_products_endpoint_returns_database_catalog() -> None:
     response = client.get("/api/v1/explore/products")
     assert response.status_code == 200
-    assert len(response.json()) == 11
-    assert response.json()[1]["id"] == "lenovo-ideapad-slim-5"
+    catalog = product_repository.list_products()
+    assert [item["id"] for item in response.json()] == [product["id"] for product in catalog]
 
 
 def test_categories_are_mapped_to_products() -> None:
     response = client.get("/api/v1/explore/categories")
     assert response.status_code == 200
     categories = {item["name"]: item["product_count"] for item in response.json()}
-    assert categories["Mobiles"] == 2
-    assert categories["Laptops & Computers"] == 2
-    assert categories["Audio & Wearables"] == 3
-    assert categories["Makeup & Beauty"] == 1
-    assert categories["Home Appliances"] == 1
-    assert categories["Households"] == 0
+    catalog = product_repository.list_products()
+    expected_counts = {
+        category: sum(product["category"] == category for product in catalog)
+        for category in CATEGORY_NAMES
+    }
+    assert categories == expected_counts
 
 
 def test_category_products_endpoint_filters_in_database() -> None:
