@@ -12,6 +12,8 @@ jobs:
     defaults:
       run:
         working-directory: astra-backend
+    env:
+      REFRESH_PRODUCTS_ON_STARTUP: "false"
     steps:
       - uses: actions/checkout@v4
 
@@ -53,6 +55,8 @@ jobs:
   e2e:
     name: Browser E2E (Playwright)
     runs-on: ubuntu-latest
+    env:
+      REFRESH_PRODUCTS_ON_STARTUP: "false"
     steps:
       - uses: actions/checkout@v4
 
@@ -79,6 +83,8 @@ jobs:
 
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
 
       - name: Run E2E suite
         run: npx playwright test
