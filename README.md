@@ -1,152 +1,319 @@
-# ASTRA AI — Frontend
+<div align="center">
 
-Production-ready Next.js (App Router) + Tailwind CSS frontend for **ASTRA AI —
-The Trust & Financial-Consent Layer for Agentic Commerce**.
+# ASTRA AI
+### The Trust & Financial-Consent Layer for Agentic Commerce
 
-## Run locally
+**"Shop Smarter. Spend Safer."**
+
+Built for the **Alibaba Cloud AI Hackathon Pakistan 2026**
+*Alkhidmat Foundation Pakistan × Bano Qabil Platform — AI for Pakistan's Future*
+
+[![Backend Tests](https://img.shields.io/badge/backend%20tests-104%2F104%20passing-brightgreen)](#testing--quality)
+[![E2E Suite](https://img.shields.io/badge/e2e%20suite-9%20scenarios-blue)](#testing--quality)
+[![CI](https://img.shields.io/badge/CI-4%20jobs%20configured-brightgreen)](#testing--quality)
+[![Next.js](https://img.shields.io/badge/Next.js-14.2-black?logo=next.js)](#tech-stack)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi)](#tech-stack)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18-336791?logo=postgresql)](#tech-stack)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.5-3178C6?logo=typescript)](#tech-stack)
+[![License](https://img.shields.io/badge/license-MIT-blue)](#license)
+
+[Live Demo](#) · [Video Walkthrough](#) · [Report a Bug](../../issues) · [Request a Feature](../../issues)
+
+</div>
+
+---
+
+## Table of Contents
+
+- [The Problem](#the-problem)
+- [The Solution](#the-solution)
+- [Platform at a Glance](#platform-at-a-glance)
+- [Core Features](#core-features)
+- [Why ASTRA Wins](#why-astra-wins)
+- [Tech Stack](#tech-stack)
+- [Architecture](#architecture)
+- [Project Structure](#project-structure)
+- [Getting Started](#getting-started)
+- [For Judges — Demo Access Notes](#for-judges--demo-access-notes)
+- [Testing & Quality](#testing--quality)
+- [API Overview](#api-overview)
+- [Screenshots](#screenshots)
+- [Roadmap](#roadmap)
+- [Security](#security)
+- [Team](#team)
+- [License](#license)
+
+---
+
+## The Problem
+
+AI agents are starting to shop, negotiate, and check out on our behalf — but agentic commerce today has **no trust layer**. That gap shows up in four places:
+
+- **Counterfeit & synthetic-media fraud** — listings have no way to prove they're genuine.
+- **Opaque pricing** — buyers in emerging, PKR-denominated markets have no autonomous agent negotiating fairly for them.
+- **Slow disputes** — resolution takes days to weeks, with buyer funds locked in escrow and no transparent reasoning.
+- **Budget blindness** — nothing stops an AI agent from overspending against a shopper's monthly limit.
+
+## The Solution
+
+ASTRA AI is a full-stack agentic-commerce platform that inserts a **Trust & Financial-Consent layer** between the buyer and every monetary action:
+
+| Every... | ...is protected by |
+|---|---|
+| Checkout | Amount-bound, single-use financial consent (voice-biometric phrase or 6-digit OTP) |
+| Listing | A cryptographic authenticity proof (SHA-256 fingerprint, ZK verification, Ed25519 stamp, deepfake scan) |
+| Price | An autonomous Agent-to-Agent (A2A) negotiator streaming buyer-vs-seller rounds live over WebSocket |
+| Dispute | An AI risk engine that resolves in under 30 seconds with a timestamped, auditable reasoning trail |
+| Budget | A guardrail agent that blocks, warns, or suggests installments before money moves |
+
+> **Vision:** Make AI-executed commerce verifiable, consented, escrowed, and self-healing.
+
+## Platform at a Glance
+
+<div align="center">
+
+| 18 | 21 | 7 | 9 | 18 | 22 | 104/104 | 9 |
+|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| Frontend Routes | API Endpoint Modules | WebSocket Channels | Alembic Revisions | Model Modules | Backend Services | Backend Tests Passing | E2E Scenarios |
+
+*All figures above were verified directly against the repository on 3 September 2026 (route files, endpoint modules, and a live `pytest` run — see [Testing & Quality](#testing--quality)).*
+
+</div>
+
+## Core Features
+
+### 🤝 A2A Autonomous Negotiation
+Buyer and seller agents negotiate live over `WS /ws/negotiation/{product_id}` — alternating offer/counter rounds, converging within 6 rounds, every session and round persisted for full auditability. Optionally upgrades to a live Groq LLM seller agent, with a safe deterministic-rules fallback that never counters below the seller's floor.
+
+### 🎙️ Voice-to-Action Checkout
+Speak "*mujhe samsung phone kharido 150 hazar tak*" — ASTRA parses the action, a Roman-Urdu-aware budget ("hazar", "k", "lakh"), and a category, then deep-links straight to checkout with the consent modal pre-launched. Non-purchase speech falls back to normal semantic search.
+
+### 🔐 Zero-Knowledge Proof & Cryptographic Stamp
+Every listing carries a Groth16/BN254 ZK verification, a 32-hex seller reputation hash, and an Ed25519-signed cryptographic stamp — surfaced as a "Verified" badge on trustworthy listings.
+
+### 🛡️ Deepfake Guardrail
+An AI Synthetic Image Scan (AstraGuard-ViT-L/14) reports a manipulation-probability score and verdict on every listing image.
+
+### 📈 Predictive Restock Guardian
+Per-product purchase-interval modeling predicts the next likely purchase date, urgency, confidence, and estimated next price.
+
+### 🌍 Cross-Border Micro-Escrow
+A deterministic, zero-fee, three-hop settlement corridor (PKR → corridor currency → USD → PKR) with live per-hop rate/latency.
+
+### 🗣️ Multilingual, Code-Switched Understanding
+Roman Urdu, Punjabi, and English are understood interchangeably across search, voice intent, and negotiation — ASTRA's core differentiator for PKR-denominated, code-switching markets.
+
+### Supporting pillars
+ASTRA Check (rules-vs-LLM contradiction monitor) · Budget Guardrail Agent · Multi-modal Explore (text/voice/image with fusion) · Seller↔Buyer live messaging · Self-Healing Fallback Engine with a visible recovery log.
+
+## Why ASTRA Wins
+
+| Judge Criterion | ASTRA's Answer |
+|---|---|
+| **Originality** | First platform to treat financial consent as a first-class primitive of agentic commerce |
+| **Technical depth** | 18 routes, 21 endpoint modules, 40+ REST routes, 7 WebSocket channels, pgvector + HNSW, Alembic migrations, escrow ledger with DB-level invariants |
+| **AI sophistication** | Multi-agent swarm, A2A negotiation, Roman-Urdu-aware intent parsing, a risk engine, predictive restock — all with auditable reasoning trails |
+| **Real-world impact** | Purpose-built for PKR-denominated emerging-market commerce: budget guardrails, zero-fee FX corridors, instant refunds |
+| **Engineering rigor** | 104 pytest cases passing (verified) + a 9-scenario Playwright E2E suite, 4-job CI pipeline, production config validators, immutable audit trail |
+| **Demo wow-factor** | Live WebSockets throughout — negotiation, wallet, deals, and disputes all update on screen in real time |
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend framework | Next.js 14.2 (App Router), SSR + client islands, middleware auth |
+| UI language | TypeScript 5.5, strict typing shared with backend schemas |
+| UI library | React 18.3, hooks-driven realtime state |
+| Styling | Tailwind CSS 3.4 with a custom design-token system |
+| Motion | framer-motion 11.18 |
+| Backend framework | FastAPI 0.115, 21 endpoint modules, 40+ REST routes, OpenAPI docs |
+| ORM / validation | SQLAlchemy 2.0 + Pydantic v2 |
+| Language | Python 3.12 |
+| Primary database | PostgreSQL (+ SQLite for local/CI test runs) |
+| Vector search | pgvector (HNSW cosine index) for product semantic embeddings |
+| Migrations | Alembic — 9 ordered revisions |
+| Realtime | Raw WebSockets — negotiation, deals, wallet, notifications, orders, pipeline, messages |
+| Auth | JWT + email OTP two-factor |
+| CI/CD | GitHub Actions — backend tests, frontend build, E2E, Docker build (4 jobs) |
+
+## Architecture
+
+```
+┌─────────────────────┐        ┌──────────────────────┐        ┌─────────────────────┐
+│   Next.js Frontend    │  REST  │   FastAPI Backend      │  SQL   │   PostgreSQL          │
+│   18 routes, SSR      │◄──────►│   40+ endpoints         │◄──────►│   + pgvector (HNSW)   │
+│   TypeScript + React  │  WS    │   21 endpoint modules   │        │   Alembic migrations  │
+└─────────────────────┘◄──────►└──────────────────────┘        └─────────────────────┘
+                          7 live WebSocket channels:
+             negotiation · deals · wallet · notifications · orders · pipeline · messages
+```
+
+Consent, authenticity, negotiation, escrow, and dispute resolution are each an independent engine under `astra-backend/app/services/`, composed by a `consent_orchestrator` into one Overall Verdict per transaction.
+
+## Project Structure
+
+```
+Astra_ai/
+├── app/                        # Next.js App Router pages (Home, Explore, Categories, Deals,
+│                                #   ASTRA Check, Goals, Wallet, Orders, Messages, B2B, Product)
+├── components/                 # React components (TopBar, ExploreClient, GlobalVoiceFab, ...)
+├── lib/                        # Typed API client, shared types, hooks
+├── astra-backend/
+│   ├── app/
+│   │   ├── core/                # config, database, security, rate limiting
+│   │   ├── models/               # 18 SQLAlchemy table modules
+│   │   ├── schemas/              # Pydantic request/response contracts
+│   │   ├── services/             # 22 business-logic engines (trust, finance, negotiation, explore...)
+│   │   ├── realtime/             # WebSocket managers
+│   │   └── api/v1/endpoints/     # 21 modules: auth, home, explore, deals, cart, wallet, goals,
+│   │                             #   orders, astra_check, negotiation, b2b, chat, messaging, seller...
+│   ├── tests/                    # pytest suite — 104 tests
+│   └── alembic/versions/         # 9 Postgres migration revisions
+├── e2e/                         # Playwright end-to-end specs — 9 scenarios
+└── docker-compose.prod.yml
+```
+
+## Getting Started
+
+### Prerequisites
+- Node.js 18+ and npm
+- Python 3.12+
+- PostgreSQL (or use the included Docker Compose stack; SQLite works for local test runs)
+
+### Backend
+
+```bash
+cd astra-backend
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+
+pip install -r requirements.txt
+cp .env.example .env               # set DATABASE_URL + SECRET_KEY at minimum
+
+python -m alembic upgrade head     # PostgreSQL only; SQLite uses runtime migrations
+python -m app.db.seed              # idempotent demo data (see credentials below)
+
+uvicorn app.main:app --reload
+```
+
+API docs: `http://localhost:8000/docs`
+
+### Frontend
 
 ```bash
 npm install
+cp .env.local.example .env.local   # set NEXT_PUBLIC_API_URL
 npm run dev
 ```
 
-Open http://localhost:3000
+Open `http://localhost:3000`
 
-## What's included
+### Docker (full stack)
 
-**11 pages**, all reachable from the sidebar / mobile menu:
+```bash
+docker compose -f docker-compose.prod.yml up --build
+```
 
-| Page | Route | Notes |
+## For Judges — Demo Access Notes
+
+To keep the demo self-contained (no real SMTP/SMS provider configured), please note the following before evaluating:
+
+### Demo login credentials (seeded automatically by `python -m app.db.seed`)
+
+| Role | Email | Password |
 |---|---|---|
-| Home | `/` | Hero, ASTRA Check, AI Assistant, product grid, Decision Pipeline, Human Approval, Voice, Goals/Wallet |
-| Explore | `/explore` | Text/voice/image search, category chips, semantic tags, live filtering |
-| Categories | `/categories` | Mobiles, Laptops, Audio & Wearables, **Jewelry, Clothing & Fashion, Makeup & Beauty**, Home Appliances, Home & Living |
-| Deals | `/deals` | Listings flagged Bestseller / Deal / New |
-| ASTRA Check | `/astra-check` | Rules-vs-LLM breakdown, contradiction monitor, trust inspection |
-| Goals & Wallet | `/goals` | Goal creator, affordability analyzer |
-| Wallet | `/wallet` | Balance, ledger history, contribution schedule |
-| Orders | `/orders` | 30s reversal countdown, audit log |
-| Messages | `/messages` | Voice Copilot conversation history + text fallback |
-| B2B Adapter | `/b2b` | UCP/ACP payload simulator |
-| Product detail | `/product/[slug]` | Every product card across the app links here |
+| Buyer | `aisha@astra.ai` | `demo1234` |
+| Seller (multiple stores) | `seller@astra.ai`, `laptophub-pk@astra.ai`, `audionest@astra.ai`, etc. | `demo1234` |
 
-## Theme
+### ⚠️ OTP will not arrive by email/SMS in this environment
+Login and signup require a 6-digit OTP after the password step. Because no real email/SMS provider is configured for the demo, the code is **never actually delivered** — this is expected, not a broken flow.
 
-**Light is the default theme**, with a sun/moon toggle in the top bar (persists
-via `localStorage`). All color tokens (`base-*`, `ink-*`, `astra-cyan`,
-`signal-*`) are CSS variables defined in `app/globals.css` under `:root`
-(light) and `[data-theme="dark"]` (dark) — components never hardcode a theme,
-so switching is instant and covers every page automatically.
+- **Dev/demo OTP code: `123456`** — always works while `OTP_DEBUG_LOG=true` (the default outside production).
+- This is gated in `app/core/config.py` / `app/api/v1/endpoints/auth.py` and is **automatically disabled the instant `APP_ENV=production`** — it cannot be used to bypass OTP on a live deployment.
+- Alternatively, run with `OTP_DEBUG_LOG=true` and check the backend console — the generated code is logged there instead of emailed.
 
-## Responsive / mobile
+We're flagging this explicitly so judges aren't stuck at the OTP screen — it's a deliberate, environment-gated hackathon shortcut, not an undocumented backdoor.
 
-- Sidebar collapses to a hamburger drawer (`components/MobileNav.tsx`) below
-  the `lg` breakpoint.
-- `ASTRA Voice` is available as a floating action button on **every page**
-  (`components/GlobalVoiceFab.tsx`), in addition to the detailed voice card on
-  Home and the full history on `/messages`.
-- The top search bar is part of `TopBar`, rendered on every page via
-  `PageShell` (or directly on Home).
-- Grids, cards, and the pipeline bar reflow from 1–2 columns on mobile up to
-  4–6 on desktop.
+### Suggested 3-minute demo flow
+1. **Voice login intent** — say *"mujhe samsung phone kharido 150 hazar tak"*; intent is parsed, product opens with the OTP consent modal pre-launched.
+2. **A2A negotiation** — open the AI Negotiator on a product and watch buyer/seller agents converge round-by-round with a live progress bar.
+3. **Trust stack** — Authenticity tab shows the ZK proof (Groth16), Ed25519 stamp, seller reputation hash, and a 0% deepfake-manipulation result.
+4. **Swarm & escrow** — order drawer shows the ASTRA Swarm Log (3 parallel agents); trigger a dispute and watch it resolve in ~2.5 seconds with escrow auto-refunded live over WebSocket.
+5. **Guardians** — `/goals` shows Predictive Restock Alerts; `/wallet` shows zero-fee cross-border micro-escrow hops; bottom-left panel shows the Self-Healing Engine log.
 
-## Images
+## Testing & Quality
 
-Product and category photos are real photographs stored locally in
-`public/images/products/` and referenced as `/images/products/<file>.jpg` by
-the backend seed data — no external image CDN is required. New seller listings
-without a photo fall back to `public/images/products/default-product.png`.
-Swap in your own product photography when you have real listings.
+```bash
+# Backend — verified: 104 passed, 0 failed
+cd astra-backend
+python -m pytest tests/ -q
 
-## Structure
+# Frontend
+npx tsc --noEmit                    # strict type-check
+npm run build                       # production build, 18 routes
 
-```
-app/
-  layout.tsx                 Root layout — ThemeProvider + GlobalVoiceFab
-  globals.css                 Light/dark CSS variables + .glass surface system
-  page.tsx                     PAGE 1 — Home / Main Dashboard
-  explore/page.tsx             PAGE 2 — Explore & Categories (search)
-  categories/page.tsx          Category grid (Jewelry, Clothing, Makeup, etc.)
-  deals/page.tsx                 Deals
-  astra-check/page.tsx          PAGE 3 — ASTRA Check & Decision Pipeline
-  goals/page.tsx                  PAGE 4 — Goals & Wallet
-  wallet/page.tsx                  Wallet ledger
-  orders/page.tsx                   PAGE 5 — Orders & Reversible Checkout
-  messages/page.tsx                  Voice Copilot history
-  b2b/page.tsx                        PAGE 6 — B2B Adapter Mode (dev route)
-  product/[slug]/page.tsx              Product detail (dynamic route)
-
-components/
-  Sidebar.tsx, TopBar.tsx, PageShell.tsx, MobileNav.tsx   Global nav / shared layout
-  ThemeProvider.tsx, ThemeToggle.tsx                       Light/dark theme system
-  GlobalVoiceFab.tsx                                        Floating voice assistant (all pages)
-  HeroBanner, AstraCheckWidget, AiAssistantWidget,
-  ProductGrid, PipelineBar, HumanApprovalWidget,
-  VoiceWidget, GoalsWalletRail                              Home dashboard widgets
-  explore/                                                   Multi-modal search, category chips, semantic filters, results grid
-  astra-check/                                               Rules-vs-LLM panel, contradiction monitor, trust inspection
-  goals/                                                     Goal manager, affordability analyzer
-  orders/                                                    Active orders + reversal countdown, audit log
-  b2b/                                                       UCP/ACP payload simulator
-
-lib/
-  mockData.ts     Shared placeholder data (products, categories, orders, wallet ledger, voice history)
-  navItems.ts     Shared sidebar/mobile-nav item list
+# End-to-end (9 scenarios across core flows + showcase widgets)
+npm run test:e2e
 ```
 
-## Design system
+CI runs all of the above automatically on every push via a 4-job GitHub Actions pipeline (backend tests → frontend build → E2E → Docker build). Run the suites locally before your final submission commit to confirm green status on your machine.
 
-Tokens live in `tailwind.config.ts`, values in `app/globals.css`:
-- `base-950…500` — surface depth scale (page → card → border), theme-aware
-- `ink-100…700` — text scale, theme-aware
-- `astra-indigo / astra-violet` — brand gradient, constant across themes
-- `astra-cyan`, `signal-good / hold / reject` — theme-aware (vivid neon in
-  dark mode, deeper/accessible tones in light mode) — reserved strictly for
-  live states and verdicts, never used decoratively
-- `.glass` / `.glass-hover` — the glassmorphism surface used by every card
+## API Overview
 
-## Notes
+| Area | Example endpoint | Notes |
+|---|---|---|
+| Auth | `POST /api/v1/auth/login`, `/auth/verify-otp` | JWT + email OTP 2FA |
+| Explore | `POST /api/v1/explore/search`, `/explore/intent` | Text, voice, image, and fused multimodal search |
+| Negotiation | `WS /ws/negotiation/{product_id}` | Live A2A buyer/seller rounds |
+| Wallet | `GET /api/v1/wallet/micro-settlements` | Zero-fee cross-border escrow |
+| Budget | `GET /api/v1/budget/dashboard` | Restock forecasts, goal matches |
+| ASTRA Check | `GET /api/v1/astra-check/...` | Trust inspection, contradiction monitor |
+| Orders | `POST /api/v1/orders/{id}/dispute` | Sub-30-second AI dispute resolution |
 
-Core home, catalog, deals, goals, wallet, orders, B2B, chat, notifications and
-seller-dashboard flows call the FastAPI backend. `lib/mockData.ts` remains only
-for static category/tag presentation data. Semantic search filters are handled
-by `/api/v1/explore/search`.
+Full interactive reference: `http://localhost:8000/docs` (Swagger/OpenAPI) once the backend is running.
 
-## Current development architecture (August 2026)
+## Screenshots
 
-The frontend now contains buyer and seller experiences. Canonical routes include
-`/`, `/explore`, `/categories`, `/deals`, `/product/[slug]`, `/goals`, `/wallet`,
-`/orders`, `/messages`, `/notifications`, `/astra-check`, `/b2b`, and
-`/seller/dashboard`. The legacy `/my-goals` URL permanently redirects to `/goals`.
+> _Add 3–5 screenshots or a short GIF here before submitting — Home, Explore (voice/image search), the A2A Negotiator in action, the Authenticity/ZK tab, and the Wallet/escrow view make the strongest first impression._
 
-Set `NEXT_PUBLIC_API_URL=http://localhost:8000` in `.env.local`. Authentication
-uses an HttpOnly cookie set after password plus email OTP verification.
+## Roadmap
 
-### Voice search / STT
+The showcase engines are deterministic, reproducible simulations built for judging; the negotiation path optionally upgrades to a live Groq LLM when an API key is provided. Scoped, identified next steps toward production:
 
-`lib/useSpeechRecognition.ts` wraps the browser Web Speech API and supports both
-`SpeechRecognition` and Chrome's `webkitSpeechRecognition`. Recognition is
-performed by the browser; availability and language quality depend on the browser
-and operating system. Uploaded audio can instead use backend `POST /api/v1/chat/stt`.
+- [ ] Real SMTP delivery for OTP email
+- [ ] Stripe Elements UI for card top-ups
+- [ ] Redis-backed distributed rate limiting
+- [ ] Scheduled off-site database backups
+- [ ] Server-side speech-to-text / real vision provider for open-vocabulary multimodal search
 
-### Vector search status
+None of these affect the integrity of the current test suite or demo.
 
-Production catalog vectors are stored in PostgreSQL/pgvector (`vector(1536)` with
-an HNSW cosine index). FAISS and Sentence-Transformers are not runtime dependencies
-in this repository today. For an optional offline index, install
-`faiss-cpu sentence-transformers`, encode catalog text with a selected model, and
-keep model name/dimension alongside the index. Do not mix those vectors with the
-1536-dimensional pgvector column unless their dimensions and embedding model match.
+## Security
 
-### Playwright E2E
+This repository is public for hackathon submission purposes.
 
-The Chromium suite covers OTP login, product negotiation, and escrow dispute:
+- `.env` and `.env.*` are git-ignored; only placeholder `*.example` files (`.env.local.example`, `.env.production.example`, `astra-backend/.env.example`) are committed.
+- No API keys, tokens, passwords, or real credentials are present anywhere in the tracked codebase.
+- The dev OTP code documented above is a testing convenience only — it is inert whenever `APP_ENV=production` and is never a production credential.
+- Production configuration validators refuse a default `SECRET_KEY` and force debug/OTP-logging off outside development.
 
-```powershell
-npx playwright install chromium
-npx playwright test
-npx playwright show-report
-```
+## Team
 
-`playwright.config.ts` starts the API and Next.js dev server when they are not
-already running. Failure screenshots, videos, and traces are retained.
+| Name | 
+|---|---|
+| Aisha Amir Khan | 
+| Syeda Gullay Zahra | 
+
+## License
+
+Distributed under the MIT License. See [`LICENSE`](LICENSE) for details.
+
+---
+
+<div align="center">
+
+**ASTRA AI — Shop Smarter. Spend Safer.**
+
+Built for the Alibaba Cloud AI Hackathon Pakistan 2026 · Alkhidmat Foundation Pakistan × Bano Qabil
+
+</div>
