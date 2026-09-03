@@ -49,7 +49,7 @@ export default function AuthenticityAuditPanel({ productSlug }: { productSlug: s
         <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-emerald-400/25 bg-emerald-400/5 px-3 py-2.5">
           <BadgeCheck className="h-4 w-4 shrink-0 text-emerald-400" />
           <div className="min-w-0">
-            <p className="text-[11px] font-bold text-emerald-400">Cryptographic Stamp Metadata</p>
+            <p className="text-[11px] font-bold text-emerald-400">Verified Cryptographic Stamp</p>
             <p className="truncate font-mono text-[9px] text-ink-500">{stamp.stamp_id} · {stamp.algorithm} · signed payload {stamp.signed_payload}… · attested by {stamp.attested_by}</p>
           </div>
         </div>

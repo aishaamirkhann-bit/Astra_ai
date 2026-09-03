@@ -40,7 +40,12 @@ test.describe("ASTRA showcase widgets", () => {
     const reserved = await page.request.post(`http://localhost:8000/api/v1/deals/${deal.id}/reserve`, { data: { quantity: 1 } });
     expect(reserved.ok()).toBeTruthy();
     const orderRef = (await reserved.json()).order_ref as string;
-    const approved = await page.request.post("http://localhost:8000/api/v1/approval/approve", { data: { order_ref: orderRef } });
+    const consent = await page.request.post("http://localhost:8000/api/v1/wallet/authorize-consent", {
+      data: { amount: deal.price, auth_method: "Voice", order_ref: orderRef, voice_transcript: `I authorize payment of Rs. ${Math.trunc(deal.price)}` },
+    });
+    expect(consent.ok()).toBeTruthy();
+    const consentId = (await consent.json()).consent_id as string;
+    const approved = await page.request.post("http://localhost:8000/api/v1/approval/approve", { data: { order_ref: orderRef, consent_id: consentId } });
     expect(approved.ok()).toBeTruthy();
 
     await page.goto("/orders");
