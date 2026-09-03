@@ -272,9 +272,29 @@ CI runs all of the above automatically on every push via a 4-job GitHub Actions 
 
 Full interactive reference: `http://localhost:8000/docs` (Swagger/OpenAPI) once the backend is running.
 
+
+
 ## Screenshots
 
-> _Add 3–5 screenshots or a short GIF here before submitting — Home, Explore (voice/image search), the A2A Negotiator in action, the Authenticity/ZK tab, and the Wallet/escrow view make the strongest first impression._
+### 🏠 Home
+
+![ASTRA AI Home](Screenshot/home.png)
+
+### 🔎 Multimodal Explore
+
+![ASTRA AI Explore](Screenshot/explore.png)
+
+### 🤖 AI Chatbot
+
+![ASTRA AI Chatbot](Screenshot/chatbot.png)
+
+### 🔐 Trust & Authenticity
+
+![ASTRA AI Trust Check](Screenshot/astracheck.png)
+
+### 💰 Wallet
+
+![ASTRA AI Wallet](Screenshot/wallet.png)
 
 ## Roadmap
 
