@@ -88,9 +88,29 @@ export default function MessagesClient() {
           }
         }
       }
-      const history = await getChatHistory();
-      setConversations(history);
-      setActiveId(nextConversationId ?? history[0]?.id ?? null);
+      try {
+        const history = await getChatHistory();
+        setConversations(history);
+        setActiveId(nextConversationId ?? history[0]?.id ?? null);
+      } catch {
+        // The message is already persisted and streamed. Keep it visible even
+        // when a background history refresh briefly loses the connection.
+        const fallbackId = nextConversationId ?? activeId ?? -Date.now();
+        const now = new Date().toISOString();
+        const userMessage: ChatMessage = { id: `local-user-${now}`, role: "user", content: text, card_type: null, card: null, created_at: now };
+        const assistantMessage: ChatMessage = { id: `local-assistant-${now}`, role: "assistant", content: streamingText ?? "", card_type: null, card: null, created_at: now };
+        setConversations((current) => {
+          const existing = current.find((conversation) => conversation.id === fallbackId);
+          if (existing) {
+            return current.map((conversation) => conversation.id === fallbackId
+              ? { ...conversation, messages: [...conversation.messages, userMessage, assistantMessage] }
+              : conversation);
+          }
+          return [...current, { id: fallbackId, title: text.slice(0, 70), messages: [userMessage, assistantMessage] }];
+        });
+        setActiveId(fallbackId);
+        setError("Reply received. Conversation history will sync when the connection recovers.");
+      }
     } catch (requestError) {
       setError((requestError as Error).message || "Could not reach the ASTRA chat service.");
     } finally {

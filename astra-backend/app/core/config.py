@@ -11,6 +11,7 @@ DEFAULT_SECRET_KEY = "dev-secret-change-me"
 class Settings(BaseSettings):
     APP_NAME: str = "ASTRA AI Backend"
     APP_ENV: str = "development"
+    ENVIRONMENT: str | None = None
     APP_DEBUG: bool = True
     # "json" = one JSON object per line (observability-friendly), "text" = dev readable.
     LOG_FORMAT: str = ""
@@ -21,9 +22,12 @@ class Settings(BaseSettings):
     AUTH_COOKIE_NAME: str = "astra_token"
     AUTH_COOKIE_SAMESITE: str = "lax"
     AUTH_COOKIE_DOMAIN: str | None = None
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/v1/auth/google/callback"
 
     DATABASE_URL: str = "sqlite:///./astra.db"
-    REDIS_URL: str = "redis://localhost:6379/0"
+    REDIS_URL: str = ""
     DEAL_EVENT_CHANNEL: str = "astra:deals"
     DEAL_SCAN_INTERVAL_SECONDS: int = 30
     DEAL_RESERVATION_MINUTES: int = 10
@@ -41,7 +45,7 @@ class Settings(BaseSettings):
     RAPIDAPI_KEY: str = ""
     RAPIDAPI_HOST: str = "real-time-product-search.p.rapidapi.com"
     PRODUCT_PROVIDER_TIMEOUT_SECONDS: float = 5.0
-    REFRESH_PRODUCTS_ON_STARTUP: bool = True
+    REFRESH_PRODUCTS_ON_STARTUP: bool = False
 
     # --- Card payments (Stripe). Empty keys = wallet-only rails. ---
     STRIPE_SECRET_KEY: str = ""
@@ -113,6 +117,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _enforce_production_safety(self) -> "Settings":
+        if self.ENVIRONMENT:
+            self.APP_ENV = self.ENVIRONMENT.lower()
         if self.APP_ENV == "production":
             if self.SECRET_KEY == DEFAULT_SECRET_KEY:
                 raise RuntimeError(

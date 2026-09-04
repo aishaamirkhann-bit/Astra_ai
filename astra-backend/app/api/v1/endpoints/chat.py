@@ -48,9 +48,11 @@ def stream_chat(payload: ChatRequest, db: Session = Depends(get_db), current_use
     card = _product_card(product) if product else None
     assistant = ChatMessage(conversation_id=conversation.id, role="assistant", content=answer, card_type="product" if card else None, card_payload=json.dumps(card) if card else None)
     db.add(assistant); db.commit(); db.refresh(assistant)
+    conversation_id = conversation.id
+    assistant_id = assistant.id
 
     def tokens() -> Iterator[str]:
-        yield json.dumps({"type": "meta", "conversation_id": conversation.id, "message_id": assistant.id}) + "\n"
+        yield json.dumps({"type": "meta", "conversation_id": conversation_id, "message_id": assistant_id}) + "\n"
         for token in answer.split(" "):
             yield json.dumps({"type": "token", "value": token + " "}) + "\n"
         if card: yield json.dumps({"type": "card", "card_type": "product", "payload": card}) + "\n"

@@ -100,6 +100,22 @@ export default function LoginPage() {
                 </>
               )}
             </button>
+            <div className="flex items-center gap-3 py-1 text-[10px] uppercase tracking-wide text-ink-700">
+              <span className="h-px flex-1 bg-base-600" />
+              <span>Or</span>
+              <span className="h-px flex-1 bg-base-600" />
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const apiUrl = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/api\/v1\/?$/, "");
+                window.location.href = `${apiUrl}/api/v1/auth/google/start`;
+              }}
+              className="flex items-center justify-center gap-2 rounded-xl border border-base-600 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-100"
+            >
+              <span className="grid h-5 w-5 place-items-center rounded-full bg-slate-800 text-xs font-bold text-white">G</span>
+              Continue with Google
+            </button>
           </div>
         </form>
 

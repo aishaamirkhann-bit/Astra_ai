@@ -35,6 +35,7 @@ class PricePointOut(BaseModel):
 
 
 class SellerVerificationOut(BaseModel):
+    id: str | None = None
     seller_id: str
     seller_name: str
     business_name: str
@@ -70,6 +71,7 @@ class TrustInspectionOut(BaseModel):
 
 
 class SellerProfileOut(BaseModel):
+    seller: SellerVerificationOut
     verification: SellerVerificationOut
     products_count: int
     audit_history: list[dict[str, Any]]

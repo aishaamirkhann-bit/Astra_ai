@@ -29,6 +29,9 @@ class DealEventBus:
         return self._redis is not None
 
     async def start(self) -> None:
+        if not settings.REDIS_URL.strip():
+            logger.info("Redis URL is empty; Deals events use local WebSocket fan-out")
+            return
         client = Redis.from_url(settings.REDIS_URL, decode_responses=True, socket_connect_timeout=1)
         try:
             await client.ping()

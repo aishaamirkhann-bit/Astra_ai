@@ -2,8 +2,6 @@ import { defineConfig, devices } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
 
-process.env.PLAYWRIGHT_BROWSERS_PATH ??= path.join(process.cwd(), ".playwright-browsers");
-
 // Backend interpreter: override with ASTRA_BACKEND_PYTHON; otherwise prefer the
 // project venv, falling back to the ambient python (CI provides its own).
 function backendPython(): string {

@@ -195,14 +195,15 @@ def seller_profile(db: Session, seller_id: str) -> SellerProfileOut:
         raise HTTPException(status_code=404, detail="Seller verification profile not found")
     audits = db.scalars(select(TrustAuditLog).where(TrustAuditLog.seller_id == seller_id).order_by(TrustAuditLog.inspected_at.desc()).limit(25)).all()
     products_count = db.scalar(select(func.count()).select_from(Product).where(Product.seller_id == seller_id)) or 0
+    seller_out = SellerVerificationOut(
+        id=verification.seller_id, seller_id=verification.seller_id, seller_name=verification.seller_name,
+        business_name=verification.business_name, verification_status=verification.verification_status,
+        business_identity_verified=verification.business_identity_verified,
+        fulfillment_rate=verification.fulfillment_rate, return_rate=verification.return_rate,
+        dispute_rate=verification.dispute_rate, trust_index=verification.trust_index,
+        is_flagged=verification.is_flagged, last_verified_at=verification.last_verified_at.isoformat(),
+    )
     return SellerProfileOut(
-        verification=SellerVerificationOut(
-            seller_id=verification.seller_id, seller_name=verification.seller_name,
-            business_name=verification.business_name, verification_status=verification.verification_status,
-            business_identity_verified=verification.business_identity_verified,
-            fulfillment_rate=verification.fulfillment_rate, return_rate=verification.return_rate,
-            dispute_rate=verification.dispute_rate, trust_index=verification.trust_index,
-            is_flagged=verification.is_flagged, last_verified_at=verification.last_verified_at.isoformat(),
-        ), products_count=products_count,
+        seller=seller_out, verification=seller_out, products_count=products_count,
         audit_history=[{"audit_id": audit.audit_id, "product_id": audit.product_id, "calculated_trust_score": audit.calculated_trust_score, "authenticity_flag": audit.authenticity_flag, "price_anomaly_detected": audit.price_anomaly_detected, "reasoning_summary": audit.reasoning_summary, "inspected_at": audit.inspected_at.isoformat()} for audit in audits],
     )

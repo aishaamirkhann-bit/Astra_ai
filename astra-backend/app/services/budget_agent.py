@@ -142,7 +142,7 @@ def _restock_forecasts(db: Session, user: User) -> list[dict]:
 
 def saving_plan(budget: UserBudget, goals: list[ShoppingGoal]) -> SavingPlanOut:
     remaining = round(sum(max(goal.target_price - goal.saved_amount, 0) for goal in goals if goal.status == "Active"), 2)
-    capacity = round(max(budget.monthly_limit + budget.rollover_savings - budget.current_spent, 0), 2)
+    capacity = max(budget.monthly_limit + budget.rollover_savings - budget.current_spent, 0)
     return SavingPlanOut(
         remaining_goal_amount=remaining,
         monthly_saving_capacity=capacity,

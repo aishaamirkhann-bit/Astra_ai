@@ -255,7 +255,22 @@ export function getCheckoutSession(checkoutRef: string): Promise<CheckoutSession
 export function confirmCheckoutSession(checkoutRef: string, consentId: string): Promise<CheckoutSessionConfirmation> { return apiFetch<CheckoutSessionConfirmation>(`/checkout/session/${checkoutRef}/confirm`, { method: "POST", body: JSON.stringify({ consent_id: consentId }) }); }
 export function abandonCheckoutSession(checkoutRef: string): Promise<CheckoutSession> { return apiFetch<CheckoutSession>(`/checkout/session/${checkoutRef}/abandon`, { method: "POST" }); }
 export function getChatHistory(): Promise<ChatConversation[]> { return apiFetch<ChatConversation[]>("/chat/history"); }
-export function streamChat(payload: { message: string; conversation_id?: number }): Promise<Response> { return fetch(`${API_URL}/api/v1/chat/stream`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); }
+export async function streamChat(payload: { message: string; conversation_id?: number }): Promise<Response> {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await fetch(`${API_URL}/api/v1/chat/stream`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    } catch (error) {
+      if (attempt === 1) throw error;
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
+    }
+  }
+  throw new Error("Chat service unavailable");
+}
 
 // ---------------------------------------------------------------------------
 // Seller-Buyer direct messaging
