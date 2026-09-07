@@ -17,7 +17,7 @@ Built for the **Alibaba Cloud AI Hackathon Pakistan 2026**
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5-3178C6?logo=typescript)](#tech-stack)
 [![License](https://img.shields.io/badge/license-MIT-blue)](#license)
 
-[Live Demo](#) · [Video Walkthrough](#) · [Report a Bug](../../issues) · [Request a Feature](../../issues)
+[Live Demo](#) · [Video Walkthrough](https://www.loom.com/share/85dce7a635b249a18f1b34f0a251a5ae) · [Report a Bug](../../issues) · [Request a Feature](../../issues)
 
 </div>
 
