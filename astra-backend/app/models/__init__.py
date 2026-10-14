@@ -18,6 +18,14 @@ from app.models.chat import ChatConversation, ChatMessage
 from app.models.messaging import DirectMessage, SellerConversation
 from app.models.negotiation import NegotiationRound, NegotiationSession
 from app.models.payment import CardTopUp
+from app.models.seller_profile import SellerProfile
+from app.models.seller_wallet import SellerWallet, SellerWalletEntry
+from app.models.sales_goal import SalesGoal
+
+# Listings and orders stay in canonical commerce tables so buyer catalog and
+# escrow records remain aligned. Seller balances and sales targets are isolated.
+ProductListing = Product
+SellerOrder = Order
 
 __all__ = [
     "User",
@@ -54,4 +62,10 @@ __all__ = [
     "NegotiationSession",
     "NegotiationRound",
     "CardTopUp",
+    "SellerProfile",
+    "ProductListing",
+    "SellerOrder",
+    "SellerWallet",
+    "SellerWalletEntry",
+    "SalesGoal",
 ]

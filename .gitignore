@@ -6,6 +6,7 @@ env/
 
 # Next.js and build output
 .next/
+.next-production-check/
 out/
 dist/
 build/

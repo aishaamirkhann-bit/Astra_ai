@@ -13,5 +13,6 @@ export default async function HomePage() {
   } catch {
     redirect("/login");
   }
+  if (data.user.role === "seller") redirect("/seller/dashboard");
   return <HomeClient data={data} />;
 }

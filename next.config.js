@@ -8,6 +8,7 @@
  */
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  distDir: process.env.ASTRA_NEXT_DIST_DIR || ".next",
   reactStrictMode: true,
   output: "standalone",
   async redirects() {

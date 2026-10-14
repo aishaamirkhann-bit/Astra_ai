@@ -19,6 +19,7 @@ class RecommendationEngine:
     def get_recommended(db: Session, limit: int = 4) -> list[Product]:
         return (
             db.query(Product)
+            .filter(Product.listing_status == "active")
             .order_by(Product.trust.desc(), Product.rating.desc())
             .limit(limit)
             .all()
@@ -30,6 +31,7 @@ class RecommendationEngine:
         among products that currently fit the user's budget."""
         candidates = (
             db.query(Product)
+            .filter(Product.listing_status == "active")
             .order_by(Product.trust.desc(), Product.rating.desc())
             .limit(20)
             .all()

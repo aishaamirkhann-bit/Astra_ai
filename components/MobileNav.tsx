@@ -4,11 +4,14 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, X, ShieldHalf } from "lucide-react";
-import { NAV_ITEMS } from "@/lib/navItems";
+import { BUYER_NAV_ITEMS, SELLER_NAV_ITEMS } from "@/lib/navItems";
+import { useAccountMode } from "@/lib/useAccountMode";
 
 export default function MobileNav() {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
+  const accountMode = useAccountMode();
+  const navItems = accountMode === "seller" ? SELLER_NAV_ITEMS : BUYER_NAV_ITEMS;
 
   return (
     <div className="lg:hidden">
@@ -26,7 +29,7 @@ export default function MobileNav() {
             className="absolute inset-0 bg-black/50 backdrop-blur-sm"
             onClick={() => setOpen(false)}
           />
-          <aside className="glass relative flex h-full w-72 max-w-[85vw] flex-col gap-6 overflow-y-auto rounded-r-2xl border-l-0 p-5">
+          <aside className={`glass relative flex h-full w-72 max-w-[85vw] flex-col gap-6 overflow-y-auto rounded-r-2xl border-l-0 p-5 ${accountMode === "seller" ? "border-r-purple-100/70 bg-white/70 backdrop-blur-md" : ""}`}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="grid h-9 w-9 place-items-center rounded-lg bg-astra-gradient shadow-glow">
@@ -47,7 +50,7 @@ export default function MobileNav() {
             </div>
 
             <nav className="flex flex-col gap-1">
-              {NAV_ITEMS.map(({ label, href, icon: Icon }) => {
+              {navItems.map(({ label, href, icon: Icon }) => {
                 const isActive = pathname === href;
                 return (
                   <Link
@@ -55,10 +58,10 @@ export default function MobileNav() {
                     href={href}
                     onClick={() => setOpen(false)}
                     className={[
-                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors",
+                      "flex items-center gap-3 rounded-full px-3 py-2.5 text-sm transition-all duration-200",
                       isActive
-                        ? "bg-astra-gradient-soft text-ink-100 shadow-[inset_0_0_0_1px_rgba(91,110,245,0.35)]"
-                        : "text-ink-300 hover:bg-base-800 hover:text-ink-100",
+                        ? accountMode === "seller" ? "bg-white/85 text-ink-100 shadow-sm ring-1 ring-purple-200/70" : "bg-astra-gradient-soft text-ink-100 shadow-[inset_0_0_0_1px_rgba(91,110,245,0.35)]"
+                        : accountMode === "seller" ? "text-ink-300 hover:bg-white/70 hover:text-ink-100" : "text-ink-300 hover:bg-base-800 hover:text-ink-100",
                     ].join(" ")}
                   >
                     <Icon

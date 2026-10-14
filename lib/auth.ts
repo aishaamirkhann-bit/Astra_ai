@@ -3,7 +3,11 @@
 
 import type { LoginResponse, UserRole } from "@/lib/types";
 
+export type AccountMode = "buyer" | "seller";
+
 const USER_KEY = "astra_user";
+const ACCOUNT_MODE_KEY = "astra_account_mode";
+export const ACCOUNT_MODE_EVENT = "astra:account-mode-change";
 // Holds the short-lived otp_token between "password submitted" and
 // "code verified" — cleared as soon as verification succeeds or fails.
 const OTP_PENDING_KEY = "astra_otp_pending";
@@ -24,13 +28,37 @@ export function getUserRole(): UserRole | null {
   return getStoredUser()?.role ?? null;
 }
 
+export function storeAccountMode(mode: AccountMode) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(ACCOUNT_MODE_KEY, mode);
+  window.dispatchEvent(new CustomEvent(ACCOUNT_MODE_EVENT, { detail: { mode } }));
+}
+
+export function getAccountMode(): AccountMode {
+  if (typeof window === "undefined") return "buyer";
+  const mode = window.localStorage.getItem(ACCOUNT_MODE_KEY);
+  return mode === "seller" ? "seller" : "buyer";
+}
+
+export function clearAccountMode() {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(ACCOUNT_MODE_KEY);
+  window.dispatchEvent(new CustomEvent(ACCOUNT_MODE_EVENT, { detail: { mode: "buyer" } }));
+}
+
+export function storeUserProfile(user: LoginResponse["user"]) {
+  window.localStorage.setItem(USER_KEY, JSON.stringify(user));
+  storeAccountMode(user.role);
+}
+
 /** Called right after a successful /auth/verify-otp response. */
 export function storeSession(session: LoginResponse) {
-  window.localStorage.setItem(USER_KEY, JSON.stringify(session.user));
+  storeUserProfile(session.user);
 }
 
 export function clearSession() {
   window.localStorage.removeItem(USER_KEY);
+  clearAccountMode();
 }
 
 export function isLoggedIn(): boolean {
@@ -43,6 +71,7 @@ export interface PendingOtp {
   otp_token: string;
   email: string;
   expires_in_minutes: number;
+  message?: string;
 }
 
 export function storePendingOtp(pending: PendingOtp) {
@@ -69,8 +98,8 @@ export function storePostAuthRedirect(path: string) {
   window.sessionStorage.setItem(POST_AUTH_REDIRECT_KEY, safePath);
 }
 
-export function consumePostAuthRedirect(): string {
-  const path = window.sessionStorage.getItem(POST_AUTH_REDIRECT_KEY) ?? "/";
+export function consumePostAuthRedirect(fallback = "/"): string {
+  const path = window.sessionStorage.getItem(POST_AUTH_REDIRECT_KEY) ?? fallback;
   window.sessionStorage.removeItem(POST_AUTH_REDIRECT_KEY);
   return path.startsWith("/") && !path.startsWith("//") ? path : "/";
 }

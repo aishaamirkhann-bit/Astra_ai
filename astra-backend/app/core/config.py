@@ -83,8 +83,8 @@ class Settings(BaseSettings):
     # --- Vision (image understanding for multimodal search). Same empty-key discipline. ---
     VISION_PROVIDER: str = ""
     VISION_API_KEY: str = ""
-    VISION_MODEL: str = ""
-    VISION_TIMEOUT_SECONDS: float = 8.0
+    VISION_MODEL: str = "qwen/qwen3.8-27b"
+    VISION_TIMEOUT_SECONDS: float = 30.0
 
     # --- Multimodal fusion weights (text vs. voice-transcript vs. image labels). ---
     FUSION_TEXT_WEIGHT: float = 1.0

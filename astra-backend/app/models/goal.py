@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, Float, String, ForeignKey
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, synonym
 from app.core.database import Base
 
 
@@ -11,6 +11,8 @@ class Goal(Base):
     name = Column(String(100), nullable=False)      # e.g. "Laptop Goal"
     target_amount = Column(Float, nullable=False)
     allocated_amount = Column(Float, default=0)
+    current_amount = synonym("allocated_amount")
+    target_title = synonym("name")
 
     deadline = Column(String(20), nullable=True)          # ISO date, e.g. "2026-12-31"
     cadence_amount = Column(Float, nullable=True)          # e.g. 8000

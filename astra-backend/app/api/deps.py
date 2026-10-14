@@ -2,13 +2,15 @@
 Shared FastAPI dependencies: DB session + current authenticated user.
 Har protected endpoint me `user: User = Depends(get_current_user)` likho.
 """
-from fastapi import Depends, HTTPException, Request, status
+import time
+
+from fastapi import Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.security import decode_access_token
+from app.core.security import create_access_token, decode_access_token
 from app.models.user import User
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
@@ -16,6 +18,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=F
 
 def get_current_user(
     request: Request,
+    response: Response,
     token: str | None = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> User:
@@ -25,11 +28,12 @@ def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    token = token or request.cookies.get(settings.AUTH_COOKIE_NAME)
-    if token is None:
+    cookie_token = request.cookies.get(settings.AUTH_COOKIE_NAME)
+    access_token = token or cookie_token
+    if access_token is None:
         raise credentials_error
 
-    payload = decode_access_token(token)
+    payload = decode_access_token(access_token)
     if payload is None:
         raise credentials_error
 
@@ -40,6 +44,20 @@ def get_current_user(
         user = None
     if user is None:
         raise credentials_error
+
+    expires_at = payload.get("exp")
+    if cookie_token and isinstance(expires_at, (int, float)) and expires_at <= time.time() + 15 * 60:
+        refreshed_token = create_access_token(str(user.id), {"role": user.role})
+        response.set_cookie(
+            key=settings.AUTH_COOKIE_NAME,
+            value=refreshed_token,
+            httponly=True,
+            secure=settings.APP_ENV == "production",
+            samesite=settings.AUTH_COOKIE_SAMESITE,
+            max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            path="/",
+            domain=settings.AUTH_COOKIE_DOMAIN,
+        )
     return user
 
 
@@ -65,3 +83,10 @@ def require_role(*allowed_roles: str):
         return current_user
 
     return _checker
+
+
+def get_current_active_seller(current_user: User = Depends(require_role("seller"))) -> User:
+    """Require an authenticated, active seller account for seller workspace APIs."""
+    if not current_user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Seller account is inactive")
+    return current_user

@@ -10,9 +10,12 @@ import {
   MessageSquare,
   Bell,
   Store,
+  Boxes,
+  ClipboardList,
+  Truck,
 } from "lucide-react";
 
-export const NAV_ITEMS = [
+export const BUYER_NAV_ITEMS = [
   { label: "Home", href: "/", icon: Home },
   { label: "Explore", href: "/explore", icon: Compass },
   { label: "Categories", href: "/categories", icon: LayoutGrid },
@@ -23,5 +26,19 @@ export const NAV_ITEMS = [
   { label: "Orders", href: "/orders", icon: Package },
   { label: "Notifications", href: "/notifications", icon: Bell },
   { label: "Messages", href: "/messages", icon: MessageSquare },
-  { label: "Seller Dashboard", href: "/seller/dashboard", icon: Store },
 ] as const;
+
+export const SELLER_NAV_ITEMS = [
+  { label: "Dashboard", href: "/seller/dashboard", icon: Home },
+  { label: "My Inventory", href: "/seller/inventory", icon: Boxes },
+  { label: "Products", href: "/seller/products", icon: Package },
+  { label: "Orders", href: "/seller/orders", icon: ClipboardList },
+  { label: "ASTRA Check", href: "/seller/astra-check", icon: ShieldCheck },
+  { label: "Sales Goals", href: "/seller/sales-goals", icon: Target },
+  { label: "Wallet", href: "/seller/wallet", icon: Wallet },
+  { label: "Fulfillment", href: "/seller/fulfillment", icon: Truck },
+  { label: "Notifications", href: "/seller/notifications", icon: Bell },
+  { label: "Messages", href: "/seller/messages", icon: MessageSquare },
+] as const;
+
+export const NAV_ITEMS = BUYER_NAV_ITEMS;

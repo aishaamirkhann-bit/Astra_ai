@@ -46,6 +46,22 @@ def _bootstrap_schema() -> None:
         apply_sqlite_compatibility_migrations(engine)
         Base.metadata.create_all(bind=engine)
         migrate_legacy_wallet_data(engine)
+        with engine.begin() as connection:
+            connection.execute(text(
+                "INSERT OR IGNORE INTO seller_profiles (user_id, role, compliance_status, total_revenue) "
+                "SELECT id, 'seller', 'pending', 0 FROM users WHERE role = 'seller'"
+            ))
+            connection.execute(text(
+                "INSERT OR IGNORE INTO seller_wallets (seller_id, available_balance, pending_payouts) "
+                "SELECT user_id, 0, 0 FROM seller_profiles"
+            ))
+            connection.execute(text(
+                "INSERT OR IGNORE INTO seller_sales_goals "
+                "(seller_id, source_goal_id, target_title, target_amount, current_amount, deadline) "
+                "SELECT goals.user_id, goals.id, goals.name, goals.target_amount, "
+                "COALESCE(goals.allocated_amount, 0), goals.deadline "
+                "FROM goals JOIN users ON users.id = goals.user_id WHERE users.role = 'seller'"
+            ))
         return
 
     from pathlib import Path

@@ -165,7 +165,12 @@ def evaluate_deals(db: Session) -> list[DealDomainEvent]:
         seller_component = (metric.seller_rating + metric.fulfillment_rate) / 2
         trust_score = round(0.4 * seller_component + 0.4 * metric.authenticity_sentiment + 0.2 * metric.price_stability, 2)
         discount_pct = round((market_average - product.base_price) / market_average * 100, 2)
-        eligible = discount_pct >= MINIMUM_DISCOUNT_PERCENT and trust_score >= MINIMUM_TRUST_SCORE and product.stock_count > 0
+        eligible = (
+            discount_pct >= MINIMUM_DISCOUNT_PERCENT
+            and trust_score >= MINIMUM_TRUST_SCORE
+            and product.stock_count > 0
+            and product.listing_status == "active"
+        )
         deal = existing.get(product.id)
 
         if deal is not None and _as_utc(deal.deal_expires_at) and _as_utc(deal.deal_expires_at) <= now:
@@ -263,6 +268,7 @@ def list_active_deals(db: Session, category: str | None, sort_by: str, page: int
     now = datetime.now(timezone.utc)
     query = select(Deal, Product).join(Product, Product.id == Deal.product_id).where(
         Deal.is_active.is_(True),
+        Product.listing_status == "active",
         or_(Deal.deal_expires_at.is_(None), Deal.deal_expires_at > now),
     )
     if category:
@@ -292,6 +298,7 @@ def get_deal_details(db: Session, deal_id: str) -> DealDetail:
         .where(
             Deal.id == deal_id,
             Deal.is_active.is_(True),
+            Product.listing_status == "active",
             or_(Deal.deal_expires_at.is_(None), Deal.deal_expires_at > now),
         )
     ).first()

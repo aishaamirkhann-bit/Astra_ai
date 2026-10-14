@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ShieldCheck, Mail, Loader2, ArrowRight } from "lucide-react";
@@ -16,6 +16,23 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resetOpen, setResetOpen] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("access") === "seller-session-required") {
+      setError("Sign in to access your Seller Workspace. Your return page will be restored after login.");
+    }
+    const errorCode = new URLSearchParams(window.location.search).get("oauth_error");
+    const messages: Record<string, string> = {
+      not_configured: "Google sign-in is not configured yet. Add the Google OAuth credentials to the backend environment.",
+      cancelled: "Google sign-in was cancelled. You can try again.",
+      invalid_state: "Google sign-in expired or could not be verified. Please try again.",
+      exchange_failed: "Google sign-in could not be completed. Please try again.",
+      unverified_email: "Google did not provide a verified email address.",
+      session: "Google sign-in succeeded, but ASTRA could not load your account. Please try again.",
+    };
+    if (errorCode && messages[errorCode]) setError(messages[errorCode]);
+  }, []);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -24,7 +41,8 @@ export default function LoginPage() {
     try {
       const otpChallenge = await loginUser({ email, password });
       storePendingOtp(otpChallenge);
-      storePostAuthRedirect(new URLSearchParams(window.location.search).get("next") ?? "/");
+      const next = new URLSearchParams(window.location.search).get("next");
+      if (next) storePostAuthRedirect(next);
       router.push("/verify-otp");
     } catch (requestError) {
       setError((requestError as Error).message || "Invalid email or password. Try again.");
@@ -107,14 +125,18 @@ export default function LoginPage() {
             </div>
             <button
               type="button"
+              disabled={googleLoading}
               onClick={() => {
+                setError(null);
+                setGoogleLoading(true);
                 const apiUrl = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/api\/v1\/?$/, "");
-                window.location.href = `${apiUrl}/api/v1/auth/google/start`;
+                const url = `${apiUrl}/api/v1/auth/google/start`;
+                window.location.assign(url);
               }}
-              className="flex items-center justify-center gap-2 rounded-xl border border-base-600 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-100"
+              className="flex items-center justify-center gap-2 rounded-xl border border-base-600 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <span className="grid h-5 w-5 place-items-center rounded-full bg-slate-800 text-xs font-bold text-white">G</span>
-              Continue with Google
+              {googleLoading ? "Redirecting…" : "Continue with Google"}
             </button>
           </div>
         </form>

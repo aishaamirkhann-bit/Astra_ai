@@ -2,7 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ChevronLeft, ShieldCheck, Star } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Check, ChevronLeft, Heart, Loader2, ShieldCheck, Star } from "lucide-react";
+import { createShoppingGoal } from "@/lib/api";
+import { showToast } from "@/lib/toast";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -20,7 +23,10 @@ type Product = {
 };
 
 export default function CategoryProductsClient({ categoryName }: { categoryName: string }) {
+  const router = useRouter();
   const [products, setProducts] = useState<Product[]>([]);
+  const [savingProductId, setSavingProductId] = useState<string | null>(null);
+  const [savedProductIds, setSavedProductIds] = useState<Set<string>>(new Set());
   const [minPrice, setMinPrice] = useState(0);
   const [maxPrice, setMaxPrice] = useState(500000);
   const [sortBy, setSortBy] = useState("most_relevant");
@@ -40,6 +46,28 @@ export default function CategoryProductsClient({ categoryName }: { categoryName:
     setMinRating(0);
     setPage(1);
   };
+
+  async function addToMyGoals(product: Product) {
+    setSavingProductId(product.id);
+    try {
+      await createShoppingGoal({
+        target_title: product.title,
+        target_price: product.price,
+        category: product.category,
+        priority_level: "Medium",
+      });
+      setSavedProductIds((current) => new Set(current).add(product.id));
+      showToast(`${product.title} added to My Goals`, "success");
+    } catch (requestError) {
+      const message = requestError instanceof Error ? requestError.message : "Could not add this product to My Goals.";
+      showToast(message, "error");
+      if (message.includes("401") || message.toLowerCase().includes("credentials")) {
+        router.push(`/login?next=${encodeURIComponent(window.location.pathname)}`);
+      }
+    } finally {
+      setSavingProductId(null);
+    }
+  }
 
   useEffect(() => {
     const slug = categoryName.toLowerCase().replace(" & ", "-").replaceAll(" ", "-");
@@ -104,18 +132,29 @@ export default function CategoryProductsClient({ categoryName }: { categoryName:
       {!loading && !error && products.length === 0 && <p className="text-sm text-ink-500">No products in this category yet.</p>}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
         {products.map((product) => (
-          <Link key={product.id} href={`/product/${product.id}`} className="glass glass-hover group block rounded-xl2 p-3">
-            <div className="photo-frame relative mb-3 aspect-square rounded-lg" style={{ backgroundImage: `url(${product.image_url})` }}>
-              {product.badge && <span className="absolute left-2 top-2 rounded-full bg-astra-gradient px-2 py-0.5 text-[9px] font-semibold text-white">{product.badge}</span>}
-            </div>
-            <p className="truncate text-xs font-medium text-ink-100">{product.title}</p>
-            <div className="mt-1 flex items-center justify-between text-[10px] text-ink-500">
-              <span className="flex items-center gap-1"><Star className="h-3 w-3 fill-signal-hold text-signal-hold" />{product.rating}</span>
-              {product.is_verified_seller && <span className="flex items-center gap-1 text-signal-good"><ShieldCheck className="h-3 w-3" />Verified</span>}
-            </div>
-            <p className="mt-1 font-display text-sm font-semibold text-ink-100">{product.formatted_price}</p>
-            <p className="truncate text-[10px] text-ink-500">{product.seller_name}</p>
-          </Link>
+          <article key={product.id} className="glass glass-hover group rounded-xl2 p-3">
+            <Link href={`/product/${product.id}`} className="block">
+              <div className="photo-frame relative mb-3 aspect-square rounded-lg" style={{ backgroundImage: `url(${product.image_url})` }}>
+                {product.badge && <span className="absolute left-2 top-2 rounded-full bg-astra-gradient px-2 py-0.5 text-[9px] font-semibold text-white">{product.badge}</span>}
+              </div>
+              <p className="truncate text-xs font-medium text-ink-100">{product.title}</p>
+              <div className="mt-1 flex items-center justify-between text-[10px] text-ink-500">
+                <span className="flex items-center gap-1"><Star className="h-3 w-3 fill-signal-hold text-signal-hold" />{product.rating}</span>
+                {product.is_verified_seller && <span className="flex items-center gap-1 text-signal-good"><ShieldCheck className="h-3 w-3" />Verified</span>}
+              </div>
+              <p className="mt-1 font-display text-sm font-semibold text-ink-100">{product.formatted_price}</p>
+              <p className="truncate text-[10px] text-ink-500">{product.seller_name}</p>
+            </Link>
+            <button
+              type="button"
+              disabled={savingProductId === product.id || savedProductIds.has(product.id)}
+              onClick={() => void addToMyGoals(product)}
+              className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-astra-violet/30 px-2 py-2 text-[10px] font-medium text-astra-violet transition hover:bg-astra-violet/10 disabled:cursor-default disabled:opacity-70"
+            >
+              {savingProductId === product.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : savedProductIds.has(product.id) ? <Check className="h-3.5 w-3.5" /> : <Heart className="h-3.5 w-3.5" />}
+              {savedProductIds.has(product.id) ? "Added to My Goals" : "Add to My Goals"}
+            </button>
+          </article>
         ))}
       </div>
       {!loading && totalPages > 1 && <div className="mt-5 flex items-center justify-center gap-3"><button type="button" disabled={page === 1} onClick={() => setPage((value) => value - 1)} className="rounded-lg border border-base-600 px-3 py-2 text-xs text-ink-300 disabled:opacity-40">Previous</button><span className="text-xs text-ink-500">Page {page} of {totalPages}</span><button type="button" disabled={page === totalPages} onClick={() => setPage((value) => value + 1)} className="rounded-lg border border-base-600 px-3 py-2 text-xs text-ink-300 disabled:opacity-40">Next</button></div>}

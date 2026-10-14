@@ -23,7 +23,10 @@ export default async function globalSetup(config: FullConfig) {
       data: { otp_token, code: "123456" },
     });
     if (!verify.ok()) throw new Error(`global-setup verify-otp failed: ${verify.status()} ${await verify.text()}`);
-    const { user } = (await verify.json()) as { user: unknown };
+    await verify.json();
+    const buyerMode = await context.post("/api/v1/auth/role", { data: { role: "buyer" } });
+    if (!buyerMode.ok()) throw new Error(`global-setup buyer-mode reset failed: ${buyerMode.status()} ${await buyerMode.text()}`);
+    const { user } = (await buyerMode.json()) as { user: unknown };
 
     const { cookies } = await context.storageState();
     const state = {

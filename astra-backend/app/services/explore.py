@@ -259,7 +259,7 @@ def hybrid_vector_search(signals: Sequence[FusionSignal], request: ExploreSearch
             for signal in weighted_signals
         ) / total_weight
         tag_match = bool(requested_tags.intersection(product_tags))
-        if normalized.strip() and lexical == 0 and not tag_match:
+        if normalized.strip() and lexical < 0.34 and not tag_match:
             continue
         candidates.append((lexical * 0.7 + (0.2 if tag_match else 0) + product["rating"] / 100, product))
 

@@ -4,6 +4,8 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import GlobalVoiceFab from "@/components/GlobalVoiceFab";
 import SelfHealingLog from "@/components/SelfHealingLog";
 import Toaster from "@/components/Toaster";
+import AccountModeProvider from "@/components/AccountModeProvider";
+import SellerModeRouteSync from "@/components/SellerModeRouteSync";
 
 export const metadata: Metadata = {
   title: "ASTRA AI — Shop Smarter. Spend Safer.",
@@ -15,9 +17,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body className="min-h-screen bg-base-950 bg-astra-glow font-body antialiased">
         <ThemeProvider>
-          {children}
-          <GlobalVoiceFab />
-          <Toaster />
+          <AccountModeProvider>
+            <SellerModeRouteSync />
+            {children}
+            <GlobalVoiceFab />
+            <Toaster />
+          </AccountModeProvider>
         </ThemeProvider>
       </body>
     </html>

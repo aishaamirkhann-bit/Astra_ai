@@ -42,8 +42,8 @@ export interface CartCheckout { checkout_ref: string; order_refs: string[]; tota
 export type CheckoutSessionStatus = "awaiting_consent" | "reversal_window_open" | "confirmed" | "cancelled" | "expired";
 export interface CheckoutSession { checkout_ref: string; total: number; shipping_address: string; status: CheckoutSessionStatus; expires_at: string; confirmed_at: string | null; cancelled_at: string | null; order_refs: string[]; }
 export interface CheckoutSessionConfirmation extends CheckoutSession { wallet_balance: number; created: boolean; }
-export interface ChatCard { slug: string; name: string; price: number; image: string; seller: string; trust: number; stock: number; }
-export interface ChatMessage { id: number | string; role: "user" | "assistant"; content: string; card_type: "product" | null; card: ChatCard | null; created_at?: string; }
+export interface ChatCard { slug: string; name: string; category?: string; price: number; image: string; seller: string; trust: number; stock: number; }
+export interface ChatMessage { id: number | string; role: "user" | "assistant"; content: string; card_type: "product" | "products" | "image_attachment" | null; card: ChatCard | ChatCard[] | { filename?: string } | null; created_at?: string; }
 export interface ChatConversation { id: number; title: string; messages: ChatMessage[]; }
 
 export interface DealOut {

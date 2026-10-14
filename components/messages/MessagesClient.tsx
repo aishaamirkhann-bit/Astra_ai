@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Mic, Plus, Send, ShieldHalf, Square } from "lucide-react";
-import { getChatHistory, streamChat } from "@/lib/api";
+import { Camera, ImagePlus, LoaderCircle, Mic, Plus, Send, ShieldHalf, Square, X } from "lucide-react";
+import { getChatHistory, sendMultimodalChat } from "@/lib/api";
 import { useSpeechRecognition } from "@/lib/useSpeechRecognition";
-import type { ChatConversation, ChatMessage } from "@/lib/types";
+import type { ChatCard, ChatConversation, ChatMessage } from "@/lib/types";
 
 export default function MessagesClient() {
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
@@ -16,7 +16,12 @@ export default function MessagesClient() {
   const [error, setError] = useState<string | null>(null);
   const [streamingText, setStreamingText] = useState<string | null>(null);
   const [pendingUserText, setPendingUserText] = useState<string | null>(null);
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const galleryInputRef = useRef<HTMLInputElement | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  const [pendingImageUrl, setPendingImageUrl] = useState<string | null>(null);
 
   const { listening, interim, start: startVoice, stop: stopVoice } = useSpeechRecognition({
     onFinal: (text) => setDraft((current) => (current ? `${current} ${text}` : text)),
@@ -49,56 +54,58 @@ export default function MessagesClient() {
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [active?.messages.length, streamingText, pendingUserText]);
+  }, [active?.messages.length, streamingText, pendingUserText, pendingImageUrl]);
+
+  useEffect(() => {
+    if (!selectedImage) {
+      setPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(selectedImage);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [selectedImage]);
 
   const send = async () => {
     const text = draft.trim();
-    if (!text || sending) return;
+    if ((!text && !selectedImage) || sending) return;
+    const image = selectedImage;
     setSending(true);
     setError(null);
-    setDraft("");
-    setPendingUserText(text);
-    setStreamingText("");
+    setPendingUserText(text || "Image attached");
+    setPendingImageUrl(previewUrl);
+    setStreamingText(image ? "Analyzing your image with ASTRA Vision…" : "Thinking…");
     try {
-      const response = await streamChat({ message: text, conversation_id: activeId ?? undefined });
-      if (!response.ok || !response.body) {
-        throw new Error(response.status === 401 ? "Session expired — please log in again." : `Chat request failed (${response.status})`);
-      }
-      let nextConversationId: number | null = null;
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const event = JSON.parse(line) as { type: string; value?: string; conversation_id?: number };
-            if (event.type === "meta" && typeof event.conversation_id === "number") {
-              nextConversationId = event.conversation_id;
-            } else if (event.type === "token" && event.value) {
-              setStreamingText((current) => (current ?? "") + event.value);
-            }
-          } catch {
-            // Ignore malformed stream lines.
-          }
-        }
-      }
+      const response = await sendMultimodalChat({
+        message: text,
+        conversation_id: activeId ?? undefined,
+        image: image ?? undefined,
+      });
+      setDraft("");
+      setSelectedImage(null);
       try {
         const history = await getChatHistory();
         setConversations(history);
-        setActiveId(nextConversationId ?? history[0]?.id ?? null);
+        setActiveId(response.conversation_id || history[0]?.id || null);
       } catch {
-        // The message is already persisted and streamed. Keep it visible even
-        // when a background history refresh briefly loses the connection.
-        const fallbackId = nextConversationId ?? activeId ?? -Date.now();
+        const fallbackId = response.conversation_id || activeId || -Date.now();
         const now = new Date().toISOString();
-        const userMessage: ChatMessage = { id: `local-user-${now}`, role: "user", content: text, card_type: null, card: null, created_at: now };
-        const assistantMessage: ChatMessage = { id: `local-assistant-${now}`, role: "assistant", content: streamingText ?? "", card_type: null, card: null, created_at: now };
+        const userMessage: ChatMessage = {
+          id: `local-user-${now}`,
+          role: "user",
+          content: text || "Please describe this image.",
+          card_type: image ? "image_attachment" : null,
+          card: image ? { filename: image.name } : null,
+          created_at: now,
+        };
+        const assistantMessage: ChatMessage = {
+          id: `local-assistant-${now}`,
+          role: "assistant",
+          content: response.reply_text,
+          card_type: response.products.length ? "products" : null,
+          card: response.products,
+          created_at: now,
+        };
         setConversations((current) => {
           const existing = current.find((conversation) => conversation.id === fallbackId);
           if (existing) {
@@ -106,7 +113,7 @@ export default function MessagesClient() {
               ? { ...conversation, messages: [...conversation.messages, userMessage, assistantMessage] }
               : conversation);
           }
-          return [...current, { id: fallbackId, title: text.slice(0, 70), messages: [userMessage, assistantMessage] }];
+          return [...current, { id: fallbackId, title: (text || "Image question").slice(0, 70), messages: [userMessage, assistantMessage] }];
         });
         setActiveId(fallbackId);
         setError("Reply received. Conversation history will sync when the connection recovers.");
@@ -117,12 +124,28 @@ export default function MessagesClient() {
       setSending(false);
       setStreamingText(null);
       setPendingUserText(null);
+      setPendingImageUrl(null);
     }
   };
 
   const startNewConversation = () => {
     setActiveId(null);
     setDraft("");
+    setSelectedImage(null);
+  };
+
+  const chooseImage = (file: File | undefined) => {
+    if (!file) return;
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setError("Choose a JPEG, PNG, or WebP image.");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setError("Images must be 8 MB or smaller.");
+      return;
+    }
+    setError(null);
+    setSelectedImage(file);
   };
 
   const renderMessage = (message: ChatMessage, key: string | number) =>
@@ -130,6 +153,11 @@ export default function MessagesClient() {
       <div key={key} className="flex justify-end">
         <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-astra-gradient px-4 py-2.5 text-sm text-white">
           {message.content}
+          {message.card_type === "image_attachment" && (
+            <span className="mt-2 flex items-center gap-1.5 text-xs text-white/80">
+              <ImagePlus className="h-3.5 w-3.5" /> Image attached
+            </span>
+          )}
         </div>
       </div>
     ) : (
@@ -139,21 +167,32 @@ export default function MessagesClient() {
         </div>
         <div className="max-w-[80%] rounded-2xl rounded-tl-sm border border-base-600 bg-base-800/60 px-4 py-2.5 text-sm text-ink-100">
           {message.content}
-          {message.card && (
-            <Link
-              href={`/product/${message.card.slug}`}
-              className="mt-3 flex items-center gap-3 rounded-xl border border-base-600 bg-base-900/70 p-2.5 transition hover:border-astra-indigo"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={message.card.image} alt={message.card.name} className="h-12 w-12 rounded-lg object-cover" />
-              <span className="min-w-0">
-                <span className="block truncate text-xs font-semibold text-ink-100">{message.card.name}</span>
-                <span className="block text-[10px] text-ink-500">
-                  Rs. {message.card.price.toLocaleString()} · {message.card.trust}% trust · {message.card.stock} in stock
-                </span>
-              </span>
-            </Link>
-          )}
+          {(() => {
+            const cards: ChatCard[] = Array.isArray(message.card)
+              ? message.card
+              : message.card && "slug" in message.card ? [message.card] : [];
+            return cards.length > 0 && (
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {cards.map((card) => (
+                  <Link
+                    key={card.slug}
+                    href={`/product/${card.slug}`}
+                    className="flex items-center gap-3 rounded-xl border border-base-600 bg-base-900/70 p-2.5 transition hover:border-astra-indigo"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={card.image} alt={card.name} className="h-12 w-12 rounded-lg object-cover" />
+                    <span className="min-w-0">
+                      <span className="block truncate text-xs font-semibold text-ink-100">{card.name}</span>
+                      {card.category && <span className="block truncate text-[10px] text-ink-500">{card.category}</span>}
+                      <span className="block text-[10px] text-ink-500">
+                        Rs. {card.price.toLocaleString()} · {card.trust}% trust · {card.stock} in stock
+                      </span>
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            );
+          })()}
         </div>
       </div>
     );
@@ -209,6 +248,10 @@ export default function MessagesClient() {
             <div className="flex justify-end">
               <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-astra-gradient px-4 py-2.5 text-sm text-white opacity-80">
                 {pendingUserText}
+                {pendingImageUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={pendingImageUrl} alt="Attached image preview" className="mt-2 max-h-48 max-w-full rounded-xl object-contain" />
+                )}
               </div>
             </div>
           )}
@@ -218,7 +261,10 @@ export default function MessagesClient() {
                 <ShieldHalf className="h-3.5 w-3.5 text-astra-cyan" />
               </div>
               <div className="max-w-[80%] rounded-2xl rounded-tl-sm border border-base-600 bg-base-800/60 px-4 py-2.5 text-sm text-ink-100">
-                {streamingText || "…"}
+                <span className="inline-flex items-center gap-2">
+                  <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                  {streamingText || "…"}
+                </span>
               </div>
             </div>
           )}
@@ -226,7 +272,43 @@ export default function MessagesClient() {
 
         {error && <p className="mt-3 text-xs text-signal-reject">{error}</p>}
 
-        <div className="mt-5 flex items-center gap-2 border-t border-base-600 pt-4">
+        {previewUrl && (
+          <div className="relative mt-4 w-fit rounded-xl border border-base-600 bg-base-900/70 p-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={previewUrl} alt="Selected image preview" className="h-24 max-w-[180px] rounded-lg object-cover" />
+            <button
+              type="button"
+              aria-label="Remove attached image"
+              onClick={() => setSelectedImage(null)}
+              className="absolute -right-2 -top-2 grid h-6 w-6 place-items-center rounded-full bg-base-800 text-ink-100 shadow"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
+
+        <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-base-600 pt-4">
+          <input
+            ref={galleryInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(event) => {
+              chooseImage(event.target.files?.[0]);
+              event.target.value = "";
+            }}
+          />
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={(event) => {
+              chooseImage(event.target.files?.[0]);
+              event.target.value = "";
+            }}
+          />
           <button
             aria-label={listening ? "Stop dictation" : "Speak to ASTRA"}
             aria-pressed={listening}
@@ -237,6 +319,24 @@ export default function MessagesClient() {
             ].join(" ")}
           >
             {listening ? <Square className="h-3.5 w-3.5" /> : <Mic className="h-4 w-4" />}
+          </button>
+          <button
+            type="button"
+            aria-label="Upload image from gallery"
+            title="Choose from gallery"
+            onClick={() => galleryInputRef.current?.click()}
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-base-600 bg-white/70 text-ink-300 transition hover:border-astra-indigo hover:text-astra-indigo"
+          >
+            <ImagePlus className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            aria-label="Take a photo with camera"
+            title="Take a photo"
+            onClick={() => cameraInputRef.current?.click()}
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-base-600 bg-white/70 text-ink-300 transition hover:border-astra-indigo hover:text-astra-indigo"
+          >
+            <Camera className="h-4 w-4" />
           </button>
           <input
             value={draft}
@@ -253,7 +353,7 @@ export default function MessagesClient() {
           <button
             aria-label="Send message"
             onClick={() => void send()}
-            disabled={sending || !draft.trim()}
+            disabled={sending || (!draft.trim() && !selectedImage)}
             className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-astra-gradient text-white hover:opacity-90 disabled:opacity-50"
           >
             <Send className="h-4 w-4" />

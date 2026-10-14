@@ -50,7 +50,7 @@ def get_product_by_slug(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    product = db.query(Product).filter(Product.slug == slug).first()
+    product = db.query(Product).filter(Product.slug == slug, Product.listing_status == "active").first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     base = _to_product_out(product, current_user.wallet)

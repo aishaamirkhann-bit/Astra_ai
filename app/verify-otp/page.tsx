@@ -68,7 +68,8 @@ export default function VerifyOtpPage() {
       const session = await verifyOtp({ otp_token: pending.otp_token, code });
       storeSession(session);
       clearPendingOtp();
-      router.replace(consumePostAuthRedirect());
+      const dashboard = session.user.role === "seller" ? "/seller/dashboard" : "/buyer/dashboard";
+      router.replace(consumePostAuthRedirect(dashboard));
       router.refresh();
     } catch {
       setError("Incorrect or expired code. Try again or resend.");
@@ -113,7 +114,7 @@ export default function VerifyOtpPage() {
           <div>
             <h1 className="font-display text-2xl font-semibold text-ink-100">Verify it&apos;s you</h1>
             <p className="mt-1 text-sm text-ink-500">
-              Code bheja gaya hai <span className="text-ink-300">{pending.email}</span> par
+              {pending.message ?? <>Code bheja gaya hai <span className="text-ink-300">{pending.email}</span> par</>}
             </p>
           </div>
         </div>

@@ -27,6 +27,10 @@ class RegisterRequest(BaseModel):
     preferred_language: str = "Roman Urdu"
 
 
+class ChangeRoleRequest(BaseModel):
+    role: Role
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"

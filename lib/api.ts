@@ -28,6 +28,7 @@ import type {
   CartCheckout,
   CheckoutSession,
   CheckoutSessionConfirmation,
+  ChatCard,
   ChatConversation,
   AuditEntry,
   B2bEvaluation,
@@ -176,6 +177,12 @@ export function getExploreData(cookieHeader?: string): Promise<{ available_balan
 }
 
 export function getCurrentUser(cookieHeader?: string): Promise<LoginResponse["user"]> { return apiFetch("/auth/me", undefined, cookieHeader); }
+export function changeAccountRole(role: UserRole): Promise<LoginResponse> {
+  return apiFetch<LoginResponse>("/auth/role", {
+    method: "POST",
+    body: JSON.stringify({ role }),
+  });
+}
 export function logoutUser(): Promise<void> { return apiFetch<void>("/auth/logout", { method: "POST" }); }
 
 export function getAstraCheckDashboardStats(): Promise<AstraCheckDashboardStats> {
@@ -255,6 +262,39 @@ export function getCheckoutSession(checkoutRef: string): Promise<CheckoutSession
 export function confirmCheckoutSession(checkoutRef: string, consentId: string): Promise<CheckoutSessionConfirmation> { return apiFetch<CheckoutSessionConfirmation>(`/checkout/session/${checkoutRef}/confirm`, { method: "POST", body: JSON.stringify({ consent_id: consentId }) }); }
 export function abandonCheckoutSession(checkoutRef: string): Promise<CheckoutSession> { return apiFetch<CheckoutSession>(`/checkout/session/${checkoutRef}/abandon`, { method: "POST" }); }
 export function getChatHistory(): Promise<ChatConversation[]> { return apiFetch<ChatConversation[]>("/chat/history"); }
+export interface MultimodalChatResponse {
+  conversation_id: number;
+  reply_text: string;
+  products: ChatCard[];
+  vision_status: "not_requested" | "analyzed" | "not_configured" | "provider_error";
+}
+export async function sendMultimodalChat(payload: {
+  message: string;
+  conversation_id?: number;
+  image?: File;
+}): Promise<MultimodalChatResponse> {
+  const body = new FormData();
+  body.append("message", payload.message);
+  if (payload.conversation_id !== undefined) body.append("conversation_id", String(payload.conversation_id));
+  if (payload.image) body.append("image", payload.image);
+  const response = await fetch(`${API_URL}/api/v1/chat/message`, {
+    method: "POST",
+    credentials: "include",
+    body,
+  });
+  if (!response.ok) {
+    const responseBody = await response.text();
+    let detail = responseBody;
+    try {
+      const parsed = JSON.parse(responseBody) as { detail?: string };
+      detail = parsed.detail ?? responseBody;
+    } catch {
+      // Preserve the raw response when the server did not return JSON.
+    }
+    throw new Error(detail || `Chat request failed (${response.status})`);
+  }
+  return response.json() as Promise<MultimodalChatResponse>;
+}
 export async function streamChat(payload: { message: string; conversation_id?: number }): Promise<Response> {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
@@ -367,17 +407,67 @@ export function getProductAuthenticity(slug: string): Promise<AuthenticityAudit>
 
 export interface SellerInventoryItem {
   id: string; title: string; category: string; price: number; stock_count: number;
-  status: "in_stock" | "out_of_stock"; image_url: string;
+  status: "active" | "inactive" | "low_stock"; image_url: string;
+  barcode?: string | null; brand?: string; subcategory?: string; color?: string;
+  size?: string; variant?: string; barcode_verified?: boolean;
+  specifications?: Record<string, string>; quality_tags?: string[];
 }
 export interface SellerEscrowOrder {
   order_ref: string; product_name: string; quantity: number; total: number;
   order_status: string; escrow_status: "LOCKED" | "RELEASED" | "REFUNDED"; placed_at: string;
 }
-export type SellerInventoryPayload = { title: string; category: string; price: number; stock_count: number; description?: string; image_url?: string };
+export type SellerInventoryPayload = {
+  title: string; category: string; price: number; stock_count: number;
+  description?: string; image_url?: string; barcode?: string; brand?: string;
+  subcategory?: string; color?: string; size?: string; variant?: string;
+  specifications?: Record<string, string>; quality_tags?: string[];
+  status?: "active" | "inactive" | "low_stock";
+};
+export type BarcodeProductLookup = {
+  barcode: string; found: true; verified: true; title: string; brand: string;
+  category: string; subcategory: string; color: string; size: string; variant: string;
+  description: string; image_url: string; market_price: number;
+  specifications: Record<string, string>; quality_tags: string[];
+};
+export type SellerDashboardStats = {
+  total_revenue: number;
+  pending_orders: number;
+  inventory_value: number;
+  average_rating: number;
+  trust_score: number | null;
+  compliance_score: number | null;
+  authenticity_score: number | null;
+  price_fairness_score: number | null;
+  total_products: number;
+  orders: number;
+  revenue_series: Array<{ label: string; amount: number }>;
+  top_products: Array<{ id: string; title: string; price: number; stock_count: number; sales_velocity: number }>;
+};
+export type SellerWalletData = {
+  available_balance: number | null;
+  pending_payouts: number | null;
+  earned_revenue: number;
+  payouts_enabled: boolean;
+  ledger: Array<{ id: string; amount: number; type: string; description: string; created_at: string }>;
+};
+export type SellerGoalData = {
+  id: number;
+  title: string;
+  target_amount: number;
+  current_amount: number;
+  deadline: string | null;
+  progress_percent: number;
+};
 export const getSellerInventory = () => apiFetch<SellerInventoryItem[]>("/seller/inventory");
 export const createSellerInventory = (payload: SellerInventoryPayload) => apiFetch<SellerInventoryItem>("/seller/inventory", { method: "POST", body: JSON.stringify(payload) });
 export const updateSellerInventory = (id: string, payload: Partial<SellerInventoryPayload>) => apiFetch<SellerInventoryItem>(`/seller/inventory/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
 export const deleteSellerInventory = (id: string) => apiFetch<void>(`/seller/inventory/${id}`, { method: "DELETE" });
+export const lookupSellerBarcode = (barcode: string) => apiFetch<BarcodeProductLookup>(`/seller/catalog/barcode/${encodeURIComponent(barcode)}`);
+export const getSellerDashboardStats = () => apiFetch<SellerDashboardStats>("/seller/dashboard-stats");
+export const lookupSellerBarcodePost = (barcode: string) => apiFetch<BarcodeProductLookup>("/seller/products/barcode-lookup", { method: "POST", body: JSON.stringify({ barcode }) });
+export const getSellerWallet = () => apiFetch<SellerWalletData>("/seller/wallet");
+export const getSellerGoals = () => apiFetch<SellerGoalData[]>("/seller/goals");
+export const createSellerGoal = (payload: { name: string; target_amount: number; deadline?: string }) => apiFetch<SellerGoalData>("/seller/goals", { method: "POST", body: JSON.stringify(payload) });
 export const getSellerOrders = () => apiFetch<SellerEscrowOrder[]>("/seller/orders");
 export const dispatchSellerOrder = (ref: string) => apiFetch<{ order_ref: string; order_status: string; escrow_status: string }>(`/seller/orders/${ref}/dispatch`, { method: "POST" });
 

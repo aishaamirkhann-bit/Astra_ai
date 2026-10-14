@@ -25,8 +25,9 @@ DATABASE_URL = (
     else None
 )
 CATEGORY_NAMES = [
-    "Mobiles", "Laptops & Computers", "Audio & Wearables", "Jewelry",
-    "Clothing & Fashion", "Makeup & Beauty", "Home Appliances", "Households",
+    "Mobiles", "Laptops & Computers", "Audio & Wearables", "Wearables", "Accessories",
+    "Electronics & Accessories", "Jewelry", "Clothing & Fashion", "Dresses & Fashion",
+    "Makeup & Beauty", "Home Appliances", "Home & Living", "Furniture", "Wallpapers",
 ]
 
 
@@ -66,6 +67,7 @@ class ProductRepository:
                     """
                 )
                 self._ensure_product_category_column(connection, "%s")
+                self._migrate_legacy_categories(connection, "%s")
                 with connection.cursor() as cursor:
                     cursor.executemany(
                         """
@@ -119,6 +121,7 @@ class ProductRepository:
                 """
             )
             self._ensure_product_category_column(connection, "?")
+            self._migrate_legacy_categories(connection, "?")
             connection.executemany(
                 """
                 INSERT INTO products (
@@ -182,6 +185,29 @@ class ProductRepository:
                 cursor.executemany(update_sql, rows)
         else:
             connection.executemany(update_sql, rows)
+
+    def _migrate_legacy_categories(self, connection: Any, placeholder: str) -> None:
+        legacy_name = "Households"
+        canonical_name = "Home & Living"
+        legacy = connection.execute(
+            f"SELECT id FROM categories WHERE name = {placeholder}", (legacy_name,)
+        ).fetchone()
+        canonical = connection.execute(
+            f"SELECT id FROM categories WHERE name = {placeholder}", (canonical_name,)
+        ).fetchone()
+        if legacy is None or canonical is None:
+            return
+
+        legacy_id = legacy["id"] if self.database_url else legacy[0]
+        canonical_id = canonical["id"] if self.database_url else canonical[0]
+        connection.execute(
+            f"UPDATE products SET category = {placeholder}, category_id = {placeholder} "
+            f"WHERE category = {placeholder} OR category_id = {placeholder}",
+            (canonical_name, canonical_id, legacy_name, legacy_id),
+        )
+        connection.execute(
+            f"DELETE FROM categories WHERE id = {placeholder}", (legacy_id,)
+        )
 
     @staticmethod
     def _category_models() -> list[CategoryModel]:

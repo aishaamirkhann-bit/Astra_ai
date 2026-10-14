@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Text, Float, Integer, Boolean
+from sqlalchemy import Column, Text, Float, Integer, Boolean, String
 from sqlalchemy.orm import synonym
 from pgvector.sqlalchemy import Vector
 from app.core.database import Base
@@ -34,5 +34,16 @@ class Product(Base):
     trust_score = synonym("trust")
     search_terms = Column(Text, nullable=False)         # comma-separated keywords for Explore search
     stock_count = Column(Integer, nullable=False, default=10)
+    stock_level = synonym("stock_count")
     seller_id = Column(Text, nullable=False, index=True)
     embedding = Column(Vector(1536), nullable=True)
+    barcode = Column(String(14), nullable=True, index=True)
+    barcode_verified = Column(Boolean, nullable=False, default=False)
+    listing_status = Column(String(10), nullable=False, default="active", server_default="active")
+    brand = Column(String(120), nullable=False, default="")
+    subcategory = Column(String(120), nullable=False, default="")
+    color = Column(String(80), nullable=False, default="")
+    size = Column(String(80), nullable=False, default="")
+    variant = Column(String(120), nullable=False, default="")
+    specifications = Column(Text, nullable=False, default="{}")
+    quality_tags = Column(Text, nullable=False, default="[]")

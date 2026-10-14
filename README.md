@@ -106,6 +106,11 @@ Roman Urdu, Punjabi, and English are understood interchangeably across search, v
 ### Supporting pillars
 ASTRA Check (rules-vs-LLM contradiction monitor) · Budget Guardrail Agent · Multi-modal Explore (text/voice/image with fusion) · Seller↔Buyer live messaging · Self-Healing Fallback Engine with a visible recovery log.
 
+### Seller Workspace
+Seller Mode is stored in the root `AccountModeProvider`, swaps the full desktop/mobile navigation, and routes seller sessions into `/seller/dashboard`. Sign-up lets the user choose Buyer or Seller; verified Buyer sessions open `/buyer/dashboard` and Seller sessions open `/seller/dashboard`. The seller route layout checks the authenticated backend role; the API independently gates seller endpoints with `get_current_active_seller`. Seller listings and orders continue to use the canonical products/orders tables so buyer catalog and escrow records stay aligned. Seller scores, wallet ledger, and sales targets are seller-specific tables, isolated from buyer balances. The dashboard and nine workspace pages live under `/seller/*`.
+
+Barcode lookups currently use the ASTRA sample/verified catalog and return a clear manual-entry response for unknown codes. No external GTIN provider is configured. Seller payout requests are deliberately disabled until a verified payout processor and seller-settlement ledger are integrated; the seller wallet view does not present the shared buyer wallet as withdrawable money. Apply the latest backend schema with `alembic upgrade head` when using PostgreSQL.
+
 ## Why ASTRA Wins
 
 | Judge Criterion | ASTRA's Answer |
@@ -131,7 +136,7 @@ ASTRA Check (rules-vs-LLM contradiction monitor) · Budget Guardrail Agent · Mu
 | Language | Python 3.12 |
 | Primary database | PostgreSQL (+ SQLite for local/CI test runs) |
 | Vector search | pgvector (HNSW cosine index) for product semantic embeddings |
-| Migrations | Alembic — 9 ordered revisions |
+| Migrations | Alembic — 13 ordered revisions |
 | Realtime | Raw WebSockets — negotiation, deals, wallet, notifications, orders, pipeline, messages |
 | Auth | JWT + email OTP two-factor |
 | CI/CD | GitHub Actions — backend tests, frontend build, E2E, Docker build (4 jobs) |
@@ -197,6 +202,54 @@ uvicorn app.main:app --reload
 ```
 
 API docs: `http://localhost:8000/docs`
+
+### Google sign-in (optional)
+
+Google sign-in requires an OAuth 2.0 Web application client. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `astra-backend/.env`, and register the exact redirect URI `http://localhost:8000/api/v1/auth/google/callback` in Google Cloud Console. Keep `GOOGLE_REDIRECT_URI` and `FRONTEND_ORIGIN=http://localhost:3000` aligned with your local URLs. For deployments on separate subdomains, configure `AUTH_COOKIE_DOMAIN` to the shared parent domain so the browser can send the session cookie to both the frontend and API.
+
+### Production database migration
+
+The current Alembic head is `20261014_13`. Seller listings and orders intentionally use the canonical product and order tables; there are no duplicate seller listing/order tables to migrate. The seller wallet and ledger are separate from buyer wallet funds.
+
+Before upgrading a production PostgreSQL database, confirm that the backend environment points to the approved target, take a restorable backup, and review the migration history. Do not put database passwords directly in commands or commit them to `.env`.
+
+```powershell
+Set-Location .\astra-backend
+.\.venv\Scripts\python.exe -m alembic heads
+.\.venv\Scripts\python.exe -m alembic history
+.\.venv\Scripts\python.exe -m alembic current
+
+# Set these to the approved PostgreSQL target; pg_dump will prompt for a password if needed.
+$env:PGHOST = "<approved-host>"
+$env:PGPORT = "5432"
+$env:PGUSER = "<approved-user>"
+$env:PGDATABASE = "<approved-database>"
+New-Item -ItemType Directory -Force ..\backups | Out-Null
+pg_dump --host $env:PGHOST --port $env:PGPORT --username $env:PGUSER --format=custom --file ..\backups\astra-pre-20261014_13.dump $env:PGDATABASE
+
+# Run only after verifying the backup and confirming the target database:
+.\.venv\Scripts\python.exe -m alembic upgrade head
+.\.venv\Scripts\python.exe -m alembic current
+```
+
+Verify `alembic heads` and the final `alembic current` both report `20261014_13`. Validate the backup restore procedure in a non-production environment first. The migration has not been run against a production database as part of this work.
+
+### Production frontend build check
+
+Stop any local Next.js development server before using the default `.next` build output:
+
+```powershell
+npm run build
+npx tsc --noEmit
+```
+
+If a development server must remain running, use a separate build output directory for the check:
+
+```powershell
+$env:ASTRA_NEXT_DIST_DIR = ".next-production-check"
+npm run build
+Remove-Item Env:ASTRA_NEXT_DIST_DIR
+```
 
 ### Frontend
 

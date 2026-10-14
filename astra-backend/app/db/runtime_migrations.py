@@ -18,6 +18,22 @@ def apply_sqlite_compatibility_migrations(engine: Engine) -> None:
             connection.execute(text("ALTER TABLE products ADD COLUMN seller_id TEXT NOT NULL DEFAULT 'unknown'"))
         if "embedding" not in columns:
             connection.execute(text("ALTER TABLE products ADD COLUMN embedding VECTOR(1536)"))
+        product_metadata_columns = {
+            "barcode": "VARCHAR(14)",
+            "barcode_verified": "BOOLEAN NOT NULL DEFAULT 0",
+            "listing_status": "VARCHAR(10) NOT NULL DEFAULT 'active'",
+            "brand": "VARCHAR(120) NOT NULL DEFAULT ''",
+            "subcategory": "VARCHAR(120) NOT NULL DEFAULT ''",
+            "color": "VARCHAR(80) NOT NULL DEFAULT ''",
+            "size": "VARCHAR(80) NOT NULL DEFAULT ''",
+            "variant": "VARCHAR(120) NOT NULL DEFAULT ''",
+            "specifications": "TEXT NOT NULL DEFAULT '{}'",
+            "quality_tags": "TEXT NOT NULL DEFAULT '[]'",
+        }
+        for column, definition in product_metadata_columns.items():
+            if column not in columns:
+                connection.execute(text(f"ALTER TABLE products ADD COLUMN {column} {definition}"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_products_barcode ON products (barcode)"))
         connection.execute(
             text(
                 "UPDATE products SET seller_id = lower(replace(replace(seller_name, ' ', '-'), '&', 'and')) "
