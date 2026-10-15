@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ArrowRight, RefreshCw, Sparkles } from "lucide-react";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { API_URL } from "@/lib/api";
 
 const CATEGORY_GRADIENTS: Record<string, string> = {
   Mobiles: "linear-gradient(135deg, rgba(34,211,238,0.25), rgba(59,130,246,0.10))",

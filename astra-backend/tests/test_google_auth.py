@@ -82,7 +82,7 @@ def test_google_signup_creates_seller_account_when_requested(monkeypatch) -> Non
     monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "test-client-id")
     monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", "test-client-secret")
     monkeypatch.setattr(settings, "GOOGLE_REDIRECT_URI", "http://localhost:8000/api/v1/auth/google/callback")
-    monkeypatch.setattr(settings, "FRONTEND_ORIGIN", "http://localhost:3000")
+    monkeypatch.setattr(settings, "FRONTEND_URL", "http://localhost:3000")
 
     class SellerGoogleClient(_GoogleClient):
         def get(self, url: str, headers: dict):
@@ -124,7 +124,7 @@ def test_google_callback_exchanges_code_sets_session_and_redirects(monkeypatch) 
     monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "test-client-id")
     monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", "test-client-secret")
     monkeypatch.setattr(settings, "GOOGLE_REDIRECT_URI", "http://localhost:8000/api/v1/auth/google/callback")
-    monkeypatch.setattr(settings, "FRONTEND_ORIGIN", "http://localhost:3000")
+    monkeypatch.setattr(settings, "FRONTEND_URL", "http://localhost:3000")
     monkeypatch.setattr(auth.httpx, "Client", _GoogleClient)
     monkeypatch.setattr(auth, "_valid_google_state", lambda value: value == "valid-test-state")
 
@@ -169,3 +169,42 @@ def test_google_start_returns_user_to_login_when_not_configured(monkeypatch) -> 
 
     assert response.status_code == 307
     assert response.headers["location"] == "http://localhost:3000/login?oauth_error=not_configured"
+
+
+def test_google_id_token_login_verifies_mocked_token_and_sets_session(monkeypatch) -> None:
+    email = f"google-id-{uuid4().hex}@example.com"
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "test-client-id")
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", "test-client-secret")
+    monkeypatch.setattr(auth, "verify_google_id_token", lambda token: {
+        "email": email,
+        "email_verified": True,
+        "name": "Google ID User",
+    } if token == "mocked-id-token" else {})
+    user_id = None
+
+    try:
+        with TestClient(app) as client:
+            response = client.post("/api/v1/auth/google", json={"id_token": "mocked-id-token", "role": "buyer"})
+            assert response.status_code == 200, response.text
+            assert response.json()["user"]["email"] == email
+            assert "astra_token=" in response.headers["set-cookie"]
+            assert client.get("/api/v1/auth/me").json()["email"] == email
+
+        with SessionLocal() as db:
+            user = db.query(User).filter(User.email == email).one()
+            user_id = user.id
+    finally:
+        if user_id is not None:
+            with SessionLocal() as db:
+                db.query(UserWallet).filter(UserWallet.user_id == user_id).delete()
+                db.query(User).filter(User.id == user_id).delete()
+                db.commit()
+
+
+def test_google_id_token_login_returns_503_when_not_configured(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "")
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", "")
+    with TestClient(app) as client:
+        response = client.post("/api/v1/auth/google", json={"id_token": "unused"})
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Google login not configured"

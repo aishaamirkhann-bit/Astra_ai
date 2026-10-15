@@ -8,7 +8,7 @@
 Built for the **Alibaba Cloud AI Hackathon Pakistan 2026**
 *Alkhidmat Foundation Pakistan × Bano Qabil Platform — AI for Pakistan's Future*
 
-[![Backend Tests](https://img.shields.io/badge/backend%20tests-104%2F104%20passing-brightgreen)](#testing--quality)
+[![Backend Tests](https://img.shields.io/badge/backend%20tests-157%2F157%20passing-brightgreen)](#testing--quality)
 [![E2E Suite](https://img.shields.io/badge/e2e%20suite-9%20scenarios-blue)](#testing--quality)
 [![CI](https://img.shields.io/badge/CI-4%20jobs%20configured-brightgreen)](#testing--quality)
 [![Next.js](https://img.shields.io/badge/Next.js-14.2-black?logo=next.js)](#tech-stack)
@@ -72,7 +72,7 @@ ASTRA AI is a full-stack agentic-commerce platform that inserts a **Trust & Fina
 
 <div align="center">
 
-| 18 | 21 | 7 | 9 | 18 | 22 | 104/104 | 9 |
+| 18 | 21 | 7 | 9 | 18 | 22 | 157/157 | 9 |
 |:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
 | Frontend Routes | API Endpoint Modules | WebSocket Channels | Alembic Revisions | Model Modules | Backend Services | Backend Tests Passing | E2E Scenarios |
 
@@ -172,7 +172,7 @@ Astra_ai/
 │   │   ├── realtime/             # WebSocket managers
 │   │   └── api/v1/endpoints/     # 21 modules: auth, home, explore, deals, cart, wallet, goals,
 │   │                             #   orders, astra_check, negotiation, b2b, chat, messaging, seller...
-│   ├── tests/                    # pytest suite — 104 tests
+│   ├── tests/                    # pytest suite — 157 tests
 │   └── alembic/versions/         # 9 Postgres migration revisions
 ├── e2e/                         # Playwright end-to-end specs — 9 scenarios
 └── docker-compose.prod.yml
@@ -205,7 +205,7 @@ API docs: `http://localhost:8000/docs`
 
 ### Google sign-in (optional)
 
-Google sign-in requires an OAuth 2.0 Web application client. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `astra-backend/.env`, and register the exact redirect URI `http://localhost:8000/api/v1/auth/google/callback` in Google Cloud Console. Keep `GOOGLE_REDIRECT_URI` and `FRONTEND_ORIGIN=http://localhost:3000` aligned with your local URLs. For deployments on separate subdomains, configure `AUTH_COOKIE_DOMAIN` to the shared parent domain so the browser can send the session cookie to both the frontend and API.
+Google sign-in requires an OAuth 2.0 Web application client. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `astra-backend/.env`, and register the exact redirect URI `http://localhost:8000/api/v1/auth/google/callback` in Google Cloud Console. Keep `GOOGLE_REDIRECT_URI` and `FRONTEND_URL=http://localhost:3000` aligned with your local URLs. For deployments on separate subdomains, configure `AUTH_COOKIE_DOMAIN` to the shared parent domain so the browser can send the session cookie to both the frontend and API.
 
 ### Production database migration
 
@@ -266,6 +266,14 @@ Open `http://localhost:3000`
 ```bash
 docker compose -f docker-compose.prod.yml up --build
 ```
+
+### Render + Vercel + Neon deployment
+
+Create a Neon PostgreSQL database, a Render Web Service with root directory `astra-backend`, and a Vercel project using the repository root. Set the Render build command to `pip install -r requirements.txt` and the start command to `python -m alembic upgrade head && python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT`. The migration runs before the API starts.
+
+Required Render variables: `APP_ENV=production`, `SECRET_KEY` (a newly generated random secret), `DATABASE_URL` (the Neon connection string with `sslmode=require`), `FRONTEND_URL` (the Vercel site origin), and `REFRESH_PRODUCTS_ON_STARTUP=false`. `REDIS_URL` is optional; without Redis, realtime events use the in-process fallback. Configure `EMAIL_PROVIDER=resend`, `RESEND_API_KEY`, and a verified `RESEND_FROM_EMAIL` to deliver production OTP emails. Keep all credentials in the provider dashboards, not in the repository.
+
+Set the Vercel environment variable `NEXT_PUBLIC_API_URL` to the Render service origin, for example `https://your-api.onrender.com`. Redeploy the Vercel project after setting it. Vercel uses the native Next.js routing configuration; this project is not a static SPA and does not use an `/index.html` rewrite.
 
 ## For Judges — Demo Access Notes
 

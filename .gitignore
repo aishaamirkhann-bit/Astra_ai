@@ -6,6 +6,7 @@ env/
 
 # Next.js and build output
 .next/
+.next-dev/
 .next-production-check/
 out/
 dist/
@@ -13,6 +14,9 @@ build/
 playwright-report/
 test-results/
 .playwright-browsers/
+.cache/
+.mypy_cache/
+.ruff_cache/
 
 # Environment files and secrets
 .env
@@ -28,8 +32,9 @@ __pycache__/
 .test-tmp/
 .backend-test-cache/
 *.db
-*.sqlite
-*.sqlite3
+*.sqlite*
+.astra_ai.db
+astra.db
 .coverage
 htmlcov/
 

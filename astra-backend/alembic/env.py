@@ -8,7 +8,8 @@ from app.core.database import Base, resolve_database_url
 import app.models  # noqa: F401
 
 config = context.config
-config.set_main_option("sqlalchemy.url", resolve_database_url(settings.DATABASE_URL))
+database_url = resolve_database_url(settings.DATABASE_URL)
+config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 if config.config_file_name:
     fileConfig(config.config_file_name)
 target_metadata = Base.metadata

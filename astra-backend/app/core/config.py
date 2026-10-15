@@ -2,7 +2,7 @@
 Central place for all environment-driven settings.
 Har jagah os.environ.get() likhne ke bajaye, yahan se `settings` import karo.
 """
-from pydantic import model_validator
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_SECRET_KEY = "dev-secret-change-me"
@@ -51,8 +51,14 @@ class Settings(BaseSettings):
     STRIPE_SECRET_KEY: str = ""
     STRIPE_PUBLISHABLE_KEY: str = ""
     STRIPE_WEBHOOK_SECRET: str = ""
+    STRIPE_MODE: str = "test"
+    STRIPE_CONNECT_ENABLED: bool = False
+    PLATFORM_FEE_PERCENT: float = 10.0
 
-    FRONTEND_ORIGIN: str = "http://localhost:3000"
+    FRONTEND_URL: str = Field(
+        default="http://localhost:3000",
+        validation_alias=AliasChoices("FRONTEND_URL", "FRONTEND_ORIGIN"),
+    )
 
     APPROVAL_WINDOW_SECONDS: int = 30
     CHECKOUT_SESSION_TTL_SECONDS: int = 600
@@ -61,6 +67,7 @@ class Settings(BaseSettings):
     OTP_LENGTH: int = 6
     OTP_EXPIRE_MINUTES: int = 5
     OTP_MAX_ATTEMPTS: int = 5
+    OTP_RESEND_COOLDOWN_SECONDS: int = 60
     OTP_TOKEN_EXPIRE_MINUTES: int = 10  # lifetime of the temp "otp_pending" token
     RATE_LIMIT_WINDOW_SECONDS: int = 60
     CONSENT_RATE_LIMIT: int = 10
@@ -98,6 +105,7 @@ class Settings(BaseSettings):
 
     # --- SMTP (real email) ---
     # Fill these in .env — never commit real credentials.
+    EMAIL_PROVIDER: str = "console"
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587
     SMTP_USERNAME: str = ""
@@ -114,6 +122,10 @@ class Settings(BaseSettings):
     OTP_DEBUG_LOG: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+
+    @property
+    def primary_frontend_url(self) -> str:
+        return self.FRONTEND_URL.split(",", 1)[0].strip().rstrip("/")
 
     @model_validator(mode="after")
     def _enforce_production_safety(self) -> "Settings":
@@ -134,6 +146,12 @@ class Settings(BaseSettings):
                 )
         if not self.LOG_FORMAT:
             self.LOG_FORMAT = "json" if self.APP_ENV == "production" else "text"
+        if not 0 <= self.PLATFORM_FEE_PERCENT <= 100:
+            raise ValueError("PLATFORM_FEE_PERCENT must be between 0 and 100")
+        if self.STRIPE_MODE not in {"test", "live"}:
+            raise ValueError("STRIPE_MODE must be either 'test' or 'live'")
+        if self.EMAIL_PROVIDER.lower() not in {"console", "resend", "smtp"}:
+            raise ValueError("EMAIL_PROVIDER must be one of: console, resend, smtp")
         return self
 
 

@@ -7,6 +7,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_active_seller, get_db
+from app.core.config import settings
 from app.models.order import Order
 from app.models.product import Product
 from app.models.user import User
@@ -19,7 +20,9 @@ from app.services.checkout_fsm import dispatch_confirmed_order
 from app.services.seller_payouts import (
     SellerPayoutProcessor,
     SellerPayoutsUnavailable,
+    connect_account_status,
     get_seller_payout_processor,
+    start_connect_onboarding,
 )
 
 router = APIRouter(prefix="/seller", tags=["Seller Dashboard"])
@@ -281,6 +284,35 @@ def request_payout(
         return processor.request_payout(seller, payload.amount)
     except SellerPayoutsUnavailable as error:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(error)) from error
+
+
+@router.post("/connect/onboarding")
+def connect_onboarding(
+    db: Session = Depends(get_db),
+    seller: User = Depends(get_current_active_seller),
+):
+    origin = settings.primary_frontend_url
+    try:
+        url = start_connect_onboarding(
+            db,
+            seller,
+            f"{origin}/seller/wallet?connect=refresh",
+            f"{origin}/seller/wallet?connect=complete",
+        )
+    except SellerPayoutsUnavailable as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    return {"onboarding_url": url}
+
+
+@router.get("/connect/status")
+def seller_connect_status(
+    db: Session = Depends(get_db),
+    seller: User = Depends(get_current_active_seller),
+):
+    try:
+        return connect_account_status(db, seller)
+    except Exception as error:
+        raise HTTPException(status_code=502, detail="Could not retrieve Stripe Connect status") from error
 
 
 @router.put("/orders/{order_ref}")

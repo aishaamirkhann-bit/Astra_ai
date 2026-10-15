@@ -13,8 +13,9 @@ from app.core.config import settings
 
 def resolve_database_url(database_url: str) -> str:
     """Resolve relative SQLite files from the backend root, not the shell cwd."""
-    if database_url.startswith("postgresql://"):
-        return database_url.replace("postgresql://", "postgresql+psycopg://", 1)
+    if database_url.startswith(("postgres://", "postgresql://")):
+        prefix = "postgres://" if database_url.startswith("postgres://") else "postgresql://"
+        return database_url.replace(prefix, "postgresql+psycopg://", 1)
     sqlite_relative_prefix = "sqlite:///./"
     if not database_url.startswith(sqlite_relative_prefix):
         return database_url

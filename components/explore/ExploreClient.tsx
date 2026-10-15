@@ -6,8 +6,7 @@ import SemanticFilters from "@/components/explore/SemanticFilters";
 import HybridResultsGrid, { type ExploreProduct } from "@/components/explore/HybridResultsGrid";
 import SmartPrompt from "@/components/explore/SmartPrompt";
 import { ImageIcon, Mic, RefreshCw, RotateCcw, X } from "lucide-react";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { API_URL } from "@/lib/api";
 
 export default function ExploreClient({
   initialQuery,

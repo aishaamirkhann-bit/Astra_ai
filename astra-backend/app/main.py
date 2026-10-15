@@ -15,6 +15,7 @@ from app.core.config import settings
 import app.core.logging  # noqa: F401  (configures root logger on import)
 from app.core.database import Base, engine
 from app.api.v1.router import api_router
+from app.api.v1.endpoints.payments import stripe_order_webhook
 from app.realtime.pipeline_ws import router as pipeline_ws_router
 from app.realtime.deals_ws import router as deals_ws_router
 from app.realtime.wallet_ws import router as wallet_ws_router
@@ -29,6 +30,7 @@ from app.services.market_feed import record_market_observations
 from app.services.budget_agent import evaluate_all_budget_matches
 from app.core.database import SessionLocal
 from app.core.rate_limit import SensitiveEndpointRateLimitMiddleware
+from app.repository import product_repository
 
 # Import models so Base.metadata knows about every table before create_all runs.
 import app.models  # noqa: F401
@@ -91,6 +93,7 @@ _bootstrap_schema()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _bootstrap_schema()
+    product_repository.initialize()
 
     def initialize_deals() -> list:
         db = SessionLocal()
@@ -144,7 +147,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=settings.APP_NAME, version="0.1.0", lifespan=lifespan)
 
-allowed_origins = [origin.strip() for origin in settings.FRONTEND_ORIGIN.split(",") if origin.strip()]
+allowed_origins = [origin.strip() for origin in settings.FRONTEND_URL.split(",") if origin.strip()]
 
 app.add_middleware(
     CORSMiddleware,
@@ -220,6 +223,7 @@ def metrics():
     }
 
 app.include_router(api_router)
+app.add_api_route("/webhooks/stripe", stripe_order_webhook, methods=["POST"], include_in_schema=True)
 app.include_router(pipeline_ws_router)
 app.include_router(deals_ws_router)
 app.include_router(wallet_ws_router)

@@ -24,6 +24,7 @@ from urllib.parse import urlencode
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
+from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -71,9 +72,59 @@ GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
 GOOGLE_STATE_COOKIE = "astra_google_state"
 
 
+class GoogleLoginRequest(BaseModel):
+    id_token: str
+    role: Literal["buyer", "seller"] = "buyer"
+
+
+def verify_google_id_token(token: str) -> dict:
+    """Verify a Google-issued ID token against this app's configured audience."""
+    from google.auth.transport.requests import Request as GoogleRequest
+    from google.oauth2 import id_token
+
+    return id_token.verify_oauth2_token(token, GoogleRequest(), settings.GOOGLE_CLIENT_ID)
+
+
+def _google_user(db: Session, profile: dict, role: Literal["buyer", "seller"]) -> User:
+    email = profile.get("email")
+    if not isinstance(email, str) or not email.strip() or profile.get("email_verified") is not True:
+        raise HTTPException(status_code=401, detail="Google did not provide a verified email address")
+    email = email.strip().lower()
+    user = db.query(User).filter(User.email.ilike(email)).first()
+    if user is None:
+        display_name = profile.get("name")
+        if not isinstance(display_name, str) or not display_name.strip():
+            display_name = email.split("@", 1)[0]
+        user = User(
+            name=display_name.strip(),
+            email=email,
+            hashed_password=hash_password(secrets.token_urlsafe(32)),
+            preferred_language="Roman Urdu",
+            role=role,
+        )
+        try:
+            db.add(user)
+            db.flush()
+            db.add(Wallet(user_id=user.id, available_balance=0))
+            if role == "seller":
+                db.add(SellerProfile(user_id=user.id, role="seller", compliance_status="pending", total_revenue=0))
+                db.flush()
+                db.add(SellerWallet(seller_id=user.id))
+            db.commit()
+            db.refresh(user)
+        except IntegrityError:
+            db.rollback()
+            user = db.query(User).filter(User.email.ilike(email)).first()
+            if user is None:
+                raise
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="Account is disabled")
+    return user
+
+
 def _google_error_redirect(error: str) -> RedirectResponse:
     query = urlencode({"oauth_error": error})
-    redirect = RedirectResponse(f"{settings.FRONTEND_ORIGIN.rstrip('/')}/login?{query}")
+    redirect = RedirectResponse(f"{settings.primary_frontend_url}/login?{query}")
     redirect.delete_cookie(
         GOOGLE_STATE_COOKIE,
         path="/api/v1/auth/google/callback",
@@ -117,8 +168,10 @@ def _google_state_role(state: str) -> Literal["buyer", "seller"]:
 
 def _issue_otp(db: Session, user: User) -> OtpRequiredResponse:
     code = generate_otp_code()
+    now = datetime.now(timezone.utc)
     user.otp_code_hash = hash_otp(code)
-    user.otp_expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.OTP_EXPIRE_MINUTES)
+    user.otp_expires_at = now + timedelta(minutes=settings.OTP_EXPIRE_MINUTES)
+    user.otp_sent_at = now
     user.otp_attempts = 0
     try:
         db.flush()
@@ -131,12 +184,8 @@ def _issue_otp(db: Session, user: User) -> OtpRequiredResponse:
             detail="We could not send the verification email. Check the email settings or try again.",
         ) from exc
 
-    has_email_provider = bool(
-        settings.RESEND_API_KEY
-        or (settings.SMTP_HOST and (settings.SMTP_USERNAME or settings.SMTP_USER))
-    )
     message = f"Verification code sent to {user.email}."
-    if not has_email_provider and settings.APP_ENV != "production" and settings.OTP_DEBUG_LOG:
+    if settings.EMAIL_PROVIDER.lower() == "console" and settings.APP_ENV.lower() in {"test", "development"}:
         message = "Local development email is not configured. Use 123456 to verify; the generated code is also printed in the backend terminal."
 
     return OtpRequiredResponse(
@@ -182,6 +231,29 @@ def google_start(role: Literal["buyer", "seller"] = "buyer"):
         domain=settings.AUTH_COOKIE_DOMAIN,
     )
     return redirect
+
+
+@router.post("/google", response_model=TokenResponse)
+def google_login(payload: GoogleLoginRequest, response: Response, db: Session = Depends(get_db)):
+    if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
+        raise HTTPException(status_code=503, detail="Google login not configured")
+    try:
+        profile = verify_google_id_token(payload.id_token)
+    except Exception as exc:
+        raise HTTPException(status_code=401, detail="Google ID token is invalid or expired") from exc
+    user = _google_user(db, profile, payload.role)
+    token = create_access_token(subject=str(user.id), extra_claims={"role": user.role})
+    response.set_cookie(
+        key=settings.AUTH_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        secure=settings.APP_ENV == "production",
+        samesite=settings.AUTH_COOKIE_SAMESITE,
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        path="/",
+        domain=settings.AUTH_COOKIE_DOMAIN,
+    )
+    return TokenResponse(access_token=token, user=UserOut.model_validate(user))
 
 
 @router.get("/google/callback")
@@ -259,7 +331,7 @@ def google_callback(
                 raise
 
     token = create_access_token(subject=str(user.id), extra_claims={"role": user.role})
-    redirect = RedirectResponse(f"{settings.FRONTEND_ORIGIN.rstrip('/')}/auth/callback")
+    redirect = RedirectResponse(f"{settings.primary_frontend_url}/auth/callback")
     redirect.delete_cookie(
         GOOGLE_STATE_COOKIE,
         path="/api/v1/auth/google/callback",
@@ -341,7 +413,7 @@ def verify_otp_code(payload: VerifyOtpRequest, response: Response, db: Session =
     if user is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No pending verification for this account")
 
-    dev_bypass = settings.APP_ENV != "production" and payload.code == DEV_OTP_CODE
+    dev_bypass = settings.APP_ENV.lower() in {"test", "development"} and payload.code == DEV_OTP_CODE
 
     if not dev_bypass:
         if user.otp_code_hash is None or user.otp_expires_at is None:
@@ -385,6 +457,15 @@ def resend_otp(payload: ResendOtpRequest, db: Session = Depends(get_db)):
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
+    if user.otp_sent_at and settings.OTP_RESEND_COOLDOWN_SECONDS > 0:
+        elapsed = (datetime.now(timezone.utc) - as_aware_utc(user.otp_sent_at)).total_seconds()
+        remaining = settings.OTP_RESEND_COOLDOWN_SECONDS - elapsed
+        if remaining > 0:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Please wait {int(remaining) + 1} seconds before requesting another code",
+            )
+
     return _issue_otp(db, user)
 
 
@@ -414,7 +495,7 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
     if user.reset_attempts >= settings.OTP_MAX_ATTEMPTS:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many attempts — request a new code")
 
-    dev_bypass = settings.APP_ENV != "production" and payload.code == DEV_OTP_CODE
+    dev_bypass = settings.APP_ENV.lower() in {"test", "development"} and payload.code == DEV_OTP_CODE
     if not dev_bypass and not verify_otp(payload.code, user.reset_code_hash):
         user.reset_attempts += 1
         db.commit()

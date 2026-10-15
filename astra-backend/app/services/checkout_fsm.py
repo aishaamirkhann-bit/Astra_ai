@@ -11,10 +11,12 @@ from app.models.cart import CartItem
 from app.models.checkout import CheckoutSession
 from app.models.deal import Deal, DealAuditLog, DealReservation
 from app.models.order import Order, OrderStatus
+from app.models.payment import StripeCheckoutPayment
 from app.models.product import Product
 from app.models.user import User
 from app.models.wallet import FinancialConsentLog, UserWallet, WalletTransaction
 from app.services.audit import record_audit
+from app.services import payment_gateway
 from app.utils.helpers import as_aware_utc
 
 
@@ -321,6 +323,12 @@ def confirm_checkout_session(
         raise HTTPException(status_code=409, detail="Checkout session is no longer active")
     if session.status != AWAITING_CONSENT:
         raise HTTPException(status_code=409, detail="Checkout session cannot be confirmed")
+    card_payment = db.query(StripeCheckoutPayment).filter(
+        StripeCheckoutPayment.checkout_session_id == session.id,
+        StripeCheckoutPayment.status == "pending",
+    ).first()
+    if card_payment:
+        raise HTTPException(status_code=409, detail="Checkout is being processed by Stripe")
     if as_aware_utc(session.expires_at) <= _now():
         _release_session_reservation(db, session, EXPIRED)
         db.commit()
@@ -495,7 +503,35 @@ def refund_reversible_order(db: Session, user: User, order: Order, reason: str, 
         .first()
     )
     refunded = False
-    if debit and not refund:
+    card_payment = (
+        db.query(StripeCheckoutPayment)
+        .filter(StripeCheckoutPayment.checkout_session_id == order.checkout_session_id)
+        .with_for_update()
+        .first()
+        if order.checkout_session_id
+        else None
+    )
+    if card_payment and card_payment.status in {"paid", "partially_refunded"}:
+        if not card_payment.payment_intent_id:
+            raise HTTPException(status_code=503, detail="Card refund is pending payment reconciliation")
+        try:
+            payment_gateway.refund_payment_intent(
+                card_payment.payment_intent_id,
+                order.id,
+                int(round(order.price * 100)),
+            )
+        except Exception as error:
+            raise HTTPException(status_code=502, detail="Card refund could not be completed; try again") from error
+        other_open_orders = db.query(Order.id).filter(
+            Order.checkout_session_id == order.checkout_session_id,
+            Order.id != order.id,
+            Order.status != OrderStatus.CANCELLED,
+        ).first()
+        card_payment.status = "partially_refunded" if other_open_orders else "refunded"
+        budget = db.query(UserBudget).filter(UserBudget.user_id == user.id).with_for_update().first()
+        if budget:
+            budget.current_spent = max(0, budget.current_spent - order.price)
+    elif debit and not refund:
         wallet.available_balance += order.price
         db.add(
             WalletTransaction(
@@ -543,6 +579,9 @@ def finalize_reversal_orders(db: Session) -> list[Order]:
     for order in orders:
         _transition(order, OrderStatus.CONFIRMED)
         order.escrow_status = "RELEASED"
+        from app.services.seller_payouts import process_order_payout
+
+        process_order_payout(db, order)
     db.flush()
 
     if finalized_order_ids:

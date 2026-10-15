@@ -1,12 +1,7 @@
 """
 EmailService
 ------------
-Delivers transactional HTML email through the first configured provider:
-
-  1. Resend   — set RESEND_API_KEY (stdlib urllib, no SDK needed)
-  2. SMTP     — set SMTP_HOST + SMTP_USERNAME (or SMTP_USER) + SMTP_PASSWORD
-  3. Dev log  — nothing configured: codes are printed to the console when
-                OTP_DEBUG_LOG=true so local dev keeps working.
+Delivers transactional HTML email through the explicitly selected provider.
 
 Fill credentials in .env — it is covered by .gitignore, never commit them.
 """
@@ -29,14 +24,18 @@ def _smtp_username() -> str:
 
 
 def send_html_email(to_email: str, subject: str, text: str, html: str) -> None:
-    """Provider chain: Resend -> SMTP -> dev console log."""
-    if settings.OTP_DEBUG_LOG:
-        # Dev convenience only — disable (OTP_DEBUG_LOG=false) in production
-        # so sensitive codes never land in logs.
-        logger.info("[DEV EMAIL] %s | %s", to_email, subject)
-        print(f"[DEV EMAIL] {to_email} | {subject}", flush=True)
+    """Send with console, Resend, or SMTP according to EMAIL_PROVIDER."""
+    provider = settings.EMAIL_PROVIDER.lower()
+    if provider == "console":
+        if settings.APP_ENV.lower() == "production":
+            raise RuntimeError("Console email delivery is disabled in production")
+        logger.info("[DEV EMAIL] %s | %s\n%s", to_email, subject, text)
+        print(f"[DEV EMAIL] {to_email} | {subject}\n{text}", flush=True)
+        return
 
-    if settings.RESEND_API_KEY:
+    if provider == "resend":
+        if not settings.RESEND_API_KEY:
+            raise RuntimeError("EMAIL_PROVIDER=resend requires RESEND_API_KEY")
         payload = json.dumps({
             "from": settings.RESEND_FROM_EMAIL,
             "to": [to_email],
@@ -55,11 +54,13 @@ def send_html_email(to_email: str, subject: str, text: str, html: str) -> None:
                 if response.status >= 300:
                     raise RuntimeError(f"Resend delivery failed with status {response.status}")
         except (urllib.error.HTTPError, urllib.error.URLError, socket.timeout) as cause:
-            logger.warning("Resend failed, falling back: %s", str(cause)[:120])
-        else:
-            return
+            logger.warning("Resend delivery failed: %s", str(cause)[:120])
+            raise RuntimeError("Resend email delivery failed") from cause
+        return
 
-    if settings.SMTP_HOST and _smtp_username():
+    if provider == "smtp":
+        if not settings.SMTP_HOST or not _smtp_username() or not settings.SMTP_PASSWORD:
+            raise RuntimeError("EMAIL_PROVIDER=smtp requires SMTP_HOST, SMTP_USERNAME, and SMTP_PASSWORD")
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
         msg["From"] = f"{settings.SMTP_FROM_NAME} <{settings.SMTP_FROM_EMAIL}>"
@@ -73,8 +74,7 @@ def send_html_email(to_email: str, subject: str, text: str, html: str) -> None:
             server.sendmail(settings.SMTP_FROM_EMAIL, [to_email], msg.as_string())
         return
 
-    if not settings.OTP_DEBUG_LOG:
-        raise RuntimeError("No email provider configured and OTP_DEBUG_LOG is off — cannot deliver email.")
+    raise RuntimeError("EMAIL_PROVIDER must be one of: console, resend, smtp")
 
 
 def _code_template(name: str, code: str, purpose: str, minutes: int) -> tuple[str, str]:

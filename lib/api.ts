@@ -43,7 +43,7 @@ import type {
   ResolutionTimeline,
 } from "@/lib/types";
 // Set in .env.local — see lib/api.ts usage below.
-const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/api\/v1\/?$/, "");
+export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/api\/v1\/?$/, "");
 
 async function apiFetch<T>(path: string, init?: RequestInit, cookieHeader?: string): Promise<T> {
   const clientSide = typeof window !== "undefined" && !cookieHeader;
@@ -135,6 +135,14 @@ export function registerUser(payload: {
 /** Sign-in page's form submit. Checks the password + sends OTP. */
 export function loginUser(payload: { email: string; password: string }): Promise<OtpRequiredResponse> {
   return apiFetch<OtpRequiredResponse>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+/** Verify a Google Identity Services ID token and start a normal ASTRA session. */
+export function googleLogin(payload: { id_token: string; role: UserRole }): Promise<LoginResponse> {
+  return apiFetch<LoginResponse>("/auth/google", {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -258,6 +266,9 @@ export function updateCartItem(itemId: number, quantity: number): Promise<Cart> 
 export function removeCartItem(itemId: number): Promise<Cart> { return apiFetch<Cart>(`/cart/${itemId}`, { method: "DELETE" }); }
 export function checkoutCart(payload: { shipping_address: string; consent_id?: string }): Promise<CartCheckout> { return apiFetch<CartCheckout>("/cart/checkout", { method: "POST", body: JSON.stringify(payload) }); }
 export function createCheckoutSession(payload: { shipping_address: string }): Promise<CheckoutSession> { return apiFetch<CheckoutSession>("/checkout/session", { method: "POST", body: JSON.stringify(payload) }); }
+export function createStripeCheckout(payload: { shipping_address: string }): Promise<{ checkout_ref: string; checkout_url: string; status: string }> { return apiFetch("/payments/checkout", { method: "POST", body: JSON.stringify(payload) }); }
+export function getStripeCheckoutStatus(checkoutRef: string): Promise<{ checkout_ref: string; checkout_status: string; payment_status: string; order_refs: string[] }> { return apiFetch(`/payments/checkout/${encodeURIComponent(checkoutRef)}`); }
+export function cancelStripeCheckout(checkoutRef: string): Promise<{ checkout_ref: string; payment_status: string }> { return apiFetch(`/payments/checkout/${encodeURIComponent(checkoutRef)}/cancel`, { method: "POST" }); }
 export function getCheckoutSession(checkoutRef: string): Promise<CheckoutSession> { return apiFetch<CheckoutSession>(`/checkout/session/${checkoutRef}`); }
 export function confirmCheckoutSession(checkoutRef: string, consentId: string): Promise<CheckoutSessionConfirmation> { return apiFetch<CheckoutSessionConfirmation>(`/checkout/session/${checkoutRef}/confirm`, { method: "POST", body: JSON.stringify({ consent_id: consentId }) }); }
 export function abandonCheckoutSession(checkoutRef: string): Promise<CheckoutSession> { return apiFetch<CheckoutSession>(`/checkout/session/${checkoutRef}/abandon`, { method: "POST" }); }

@@ -17,7 +17,7 @@ from app.models.budget import BudgetAlert, ShoppingGoal, UserBudget
 from app.models.chat import ChatConversation, ChatMessage
 from app.models.messaging import DirectMessage, SellerConversation
 from app.models.negotiation import NegotiationRound, NegotiationSession
-from app.models.payment import CardTopUp
+from app.models.payment import CardTopUp, SellerPayoutLedger, StripeCheckoutPayment, StripeConnectAccount, StripeWebhookEvent
 from app.models.seller_profile import SellerProfile
 from app.models.seller_wallet import SellerWallet, SellerWalletEntry
 from app.models.sales_goal import SalesGoal
@@ -62,6 +62,10 @@ __all__ = [
     "NegotiationSession",
     "NegotiationRound",
     "CardTopUp",
+    "StripeCheckoutPayment",
+    "StripeWebhookEvent",
+    "StripeConnectAccount",
+    "SellerPayoutLedger",
     "SellerProfile",
     "ProductListing",
     "SellerOrder",

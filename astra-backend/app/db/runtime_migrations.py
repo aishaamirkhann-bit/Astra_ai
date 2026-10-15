@@ -3,7 +3,16 @@ from sqlalchemy import Engine, inspect, text
 
 def apply_sqlite_compatibility_migrations(engine: Engine) -> None:
     """Keep the local SQLite database aligned with the PostgreSQL migration."""
-    if engine.dialect.name != "sqlite" or not inspect(engine).has_table("products"):
+    if engine.dialect.name != "sqlite":
+        return
+
+    if inspect(engine).has_table("users"):
+        user_columns = {column["name"] for column in inspect(engine).get_columns("users")}
+        if "otp_sent_at" not in user_columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE users ADD COLUMN otp_sent_at DATETIME"))
+
+    if not inspect(engine).has_table("products"):
         return
 
     columns = {column["name"] for column in inspect(engine).get_columns("products")}

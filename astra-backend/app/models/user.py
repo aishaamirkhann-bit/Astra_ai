@@ -22,6 +22,7 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     otp_code_hash = Column(String(255), nullable=True)       # never store the raw code
     otp_expires_at = Column(DateTime(timezone=True), nullable=True)
+    otp_sent_at = Column(DateTime(timezone=True), nullable=True)
     otp_attempts = Column(Integer, default=0)                # brute-force guard per OTP
 
     # --- Password reset OTP (separate from login OTP on purpose) ---

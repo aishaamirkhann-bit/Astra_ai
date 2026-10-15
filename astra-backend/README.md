@@ -96,31 +96,37 @@ astra-backend/
 
 ```bash
 cd astra-backend
-python -m venv .venv
-source .venv/bin/activate       # Windows: .venv\Scripts\activate
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1  # Windows PowerShell
 
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 
-cp .env.example .env            # set DATABASE_URL + SECRET_KEY at least
+Copy-Item .env.example .env     # only if .env does not already exist
 
 # Migrations + seed (idempotent)
 python -m alembic upgrade head  # PostgreSQL only; SQLite uses runtime migrations
 python -m app.db.seed
 
 # Run
-uvicorn app.main:app --reload
+python -m uvicorn app.main:app --reload
+
+# In another PowerShell window, from astra-backend
+python -m pytest -q
 ```
+
+From the repository root, run the frontend with `npm run dev` and open
+`http://localhost:3000`. Backend API docs are at `http://localhost:8000/docs`.
 
 ### Real OTP email
 
-Email delivery is configured through the backend environment and is used for
-login, registration, resend, and password-reset codes. Resend is preferred
-over SMTP when both are configured:
+Email delivery is configured with `EMAIL_PROVIDER=console` (the local default),
+`EMAIL_PROVIDER=resend`, or `EMAIL_PROVIDER=smtp`. Console mode prints the OTP
+in the backend terminal and is rejected in production. Resend configuration:
 
 ```dotenv
+EMAIL_PROVIDER=resend
 RESEND_API_KEY=re_...
 RESEND_FROM_EMAIL=ASTRA AI <no-reply@your-verified-domain.example>
-OTP_DEBUG_LOG=false
 ```
 
 In Resend, verify the sending domain and add its DNS records before using a
@@ -137,21 +143,48 @@ SMTP_PASSWORD=your-16-character-app-password
 SMTP_FROM_EMAIL=your-address@gmail.com
 SMTP_FROM_NAME=ASTRA AI
 SMTP_USE_TLS=true
-OTP_DEBUG_LOG=false
+EMAIL_PROVIDER=smtp
 ```
 
-Do not commit `.env` or provider credentials. In development, `OTP_DEBUG_LOG`
-may remain enabled and the `123456` OTP bypass remains available; both are
-disabled when `APP_ENV=production`.
+Set `OTP_RESEND_COOLDOWN_SECONDS` to control resend throttling. OTPs are random,
+hashed in the database, expire after five minutes, and allow five attempts.
+The `123456` development shortcut is only accepted when `APP_ENV=development`
+or `APP_ENV=test`; it is never accepted in production. Never commit `.env` or
+provider credentials.
 
 API docs auto-generate at: **http://localhost:8000/docs**
 
 Demo login: `aisha@astra.ai` / `demo1234`. Auth is strict JWT everywhere
 (no anonymous fallback). Login returns an OTP challenge; in development
-(`APP_ENV != production`) the code `123456` is accepted and the real OTP is
-printed to the server console (`OTP_DEBUG_LOG`). Both conveniences are
-force-disabled when `APP_ENV=production`, which also refuses to boot with the
-default `SECRET_KEY`.
+(`APP_ENV=development`) the code `123456` is accepted and the random OTP is
+printed to the server console when `EMAIL_PROVIDER=console`. These conveniences
+are unavailable in production, which also refuses to boot with the default
+`SECRET_KEY`.
+
+### Google Sign-In
+
+Create a Google OAuth web client. Put its client ID in backend `.env`
+(`GOOGLE_CLIENT_ID`) and frontend `.env.local` (`NEXT_PUBLIC_GOOGLE_CLIENT_ID`);
+keep `GOOGLE_CLIENT_SECRET` only in the backend. Add `http://localhost:3000` as
+an authorized JavaScript origin. For the legacy OAuth redirect endpoint, also
+authorize `http://localhost:8000/api/v1/auth/google/callback`.
+
+### Stripe test mode
+
+Set `STRIPE_MODE=test`, `STRIPE_SECRET_KEY=sk_test_...`,
+`STRIPE_PUBLISHABLE_KEY=pk_test_...`, and `STRIPE_WEBHOOK_SECRET=whsec_...`.
+Order checkout uses hosted Stripe Checkout Sessions; the signed webhook is
+`POST /webhooks/stripe`. Test with Stripe CLI:
+
+```powershell
+stripe listen --forward-to localhost:8000/webhooks/stripe
+```
+
+Copy the CLI's `whsec_...` value into backend `.env`, restart the API, and use
+test card `4242 4242 4242 4242` with any future expiry and any CVC. Connect
+onboarding/transfers are disabled by default; set `STRIPE_CONNECT_ENABLED=true`
+to enable test-mode Express accounts. Configure `PLATFORM_FEE_PERCENT` as a
+number from 0 to 100.
 
 ---
 
@@ -195,7 +228,7 @@ const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/home`, {
 const data = await res.json();
 ```
 
-Backend already has CORS enabled for `http://localhost:3000` (see `.env` → `FRONTEND_ORIGIN`).
+Backend CORS origins are configured with comma-separated `FRONTEND_URL` values; the local default is `http://localhost:3000`.
 
 ---
 
@@ -344,8 +377,9 @@ FAISS service is running.
 
 ### Environment variables
 
-Required production values are `APP_ENV`, `SECRET_KEY`, `DATABASE_URL`,
-`REDIS_URL`, and `FRONTEND_ORIGIN`. Email uses either `RESEND_API_KEY` or
+Required production values are `APP_ENV`, `SECRET_KEY`, `DATABASE_URL`, and
+`FRONTEND_URL`. `REDIS_URL` is optional; without it the service uses its
+in-process realtime fallback. Email uses either `RESEND_API_KEY` or
 `SMTP_HOST`, `SMTP_USER`/`SMTP_USERNAME`, and `SMTP_PASSWORD`. Optional Groq
 negotiation uses `GROQ_API_KEY`, `GROQ_MODEL`, and `GROQ_TIMEOUT_SECONDS`.
 Disable `OTP_DEBUG_LOG` in production. Optional server STT uses `STT_PROVIDER`

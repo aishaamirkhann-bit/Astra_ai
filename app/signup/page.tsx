@@ -7,6 +7,7 @@ import { ShieldCheck, Mail, User, Loader2, ArrowRight, ShoppingBag, Store } from
 import { registerUser } from "@/lib/api";
 import { storePendingOtp } from "@/lib/auth";
 import PasswordInput from "@/components/auth/PasswordInput";
+import GoogleSignInButton from "@/components/auth/GoogleSignInButton";
 import type { UserRole } from "@/lib/types";
 
 export default function SignupPage() {
@@ -16,7 +17,6 @@ export default function SignupPage() {
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<UserRole>("buyer");
   const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(e: FormEvent) {
@@ -45,13 +45,6 @@ export default function SignupPage() {
     } finally {
       setLoading(false);
     }
-  }
-
-  function continueWithGoogle() {
-    setError(null);
-    setGoogleLoading(true);
-    const apiUrl = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/api\/v1\/?$/, "");
-    window.location.assign(`${apiUrl}/api/v1/auth/google/start?role=${role}`);
   }
 
   return (
@@ -164,15 +157,7 @@ export default function SignupPage() {
               <span>Or</span>
               <span className="h-px flex-1 bg-base-600" />
             </div>
-            <button
-              type="button"
-              disabled={googleLoading}
-              onClick={continueWithGoogle}
-              className="flex items-center justify-center gap-2 rounded-xl border border-base-600 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <span className="grid h-5 w-5 place-items-center rounded-full bg-slate-800 text-xs font-bold text-white">G</span>
-              {googleLoading ? "Redirecting…" : "Continue with Google"}
-            </button>
+            <GoogleSignInButton role={role} />
           </div>
         </form>
 

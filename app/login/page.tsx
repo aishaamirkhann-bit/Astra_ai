@@ -8,6 +8,7 @@ import { loginUser } from "@/lib/api";
 import { storePendingOtp, storePostAuthRedirect } from "@/lib/auth";
 import PasswordInput from "@/components/auth/PasswordInput";
 import ForgotPasswordModal from "@/components/auth/ForgotPasswordModal";
+import GoogleSignInButton from "@/components/auth/GoogleSignInButton";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -16,7 +17,6 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resetOpen, setResetOpen] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
 
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("access") === "seller-session-required") {
@@ -123,21 +123,7 @@ export default function LoginPage() {
               <span>Or</span>
               <span className="h-px flex-1 bg-base-600" />
             </div>
-            <button
-              type="button"
-              disabled={googleLoading}
-              onClick={() => {
-                setError(null);
-                setGoogleLoading(true);
-                const apiUrl = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/api\/v1\/?$/, "");
-                const url = `${apiUrl}/api/v1/auth/google/start`;
-                window.location.assign(url);
-              }}
-              className="flex items-center justify-center gap-2 rounded-xl border border-base-600 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <span className="grid h-5 w-5 place-items-center rounded-full bg-slate-800 text-xs font-bold text-white">G</span>
-              {googleLoading ? "Redirecting…" : "Continue with Google"}
-            </button>
+            <GoogleSignInButton role="buyer" />
           </div>
         </form>
 

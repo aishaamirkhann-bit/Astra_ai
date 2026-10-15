@@ -4,10 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, ChevronLeft, Heart, Loader2, ShieldCheck, Star } from "lucide-react";
-import { createShoppingGoal } from "@/lib/api";
+import { API_URL, createShoppingGoal } from "@/lib/api";
 import { showToast } from "@/lib/toast";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 type Product = {
   id: string;

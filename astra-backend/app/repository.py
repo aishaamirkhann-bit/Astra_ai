@@ -1,29 +1,20 @@
 import json
-import os
 import sqlite3
 from pathlib import Path
 from typing import Any
 
-from dotenv import load_dotenv
+from sqlalchemy.engine import make_url
+
 from app.data import PRODUCTS
+from app.core.config import settings
+from app.core.database import resolve_database_url
 from app.models.explore import ProductModel
 from app.models.category import CategoryModel
 
-_BACKEND_DIR = Path(__file__).resolve().parents[1]
-load_dotenv(_BACKEND_DIR / ".env")
-
-
-_DEFAULT_DATABASE_PATH = Path(__file__).resolve().parents[2] / ".astra_ai.db"
-DATABASE_PATH = Path(os.getenv("ASTRA_DB_PATH", _DEFAULT_DATABASE_PATH))
-_configured_database_url = os.getenv("ASTRA_DATABASE_URL") or os.getenv("DATABASE_URL")
-# This repository uses sqlite3 directly for local development and psycopg for
-# PostgreSQL. The main app's SQLAlchemy-style SQLite URL must not be sent to
-# psycopg; in that case the Explore feature uses its local SQLite database.
-DATABASE_URL = (
-    _configured_database_url
-    if _configured_database_url and _configured_database_url.startswith(("postgres://", "postgresql://"))
-    else None
-)
+DATABASE_PATH = Path(__file__).resolve().parents[1] / "astra.db"
+DATABASE_URL = resolve_database_url(settings.DATABASE_URL)
+CATEGORIES_TABLE = "explore_categories"
+PRODUCTS_TABLE = "explore_products"
 CATEGORY_NAMES = [
     "Mobiles", "Laptops & Computers", "Audio & Wearables", "Wearables", "Accessories",
     "Electronics & Accessories", "Jewelry", "Clothing & Fashion", "Dresses & Fashion",
@@ -36,28 +27,35 @@ class ProductRepository:
         self.database_path = database_path
         self.database_url = database_url
 
+    @property
+    def is_postgres(self) -> bool:
+        return bool(self.database_url and make_url(self.database_url).get_backend_name() == "postgresql")
+
     def _connect(self) -> Any:
-        if self.database_url:
+        if self.is_postgres:
             try:
                 import psycopg
                 from psycopg.rows import dict_row
             except ImportError as error:
                 raise RuntimeError("Install psycopg[binary] to use PostgreSQL") from error
-            return psycopg.connect(self.database_url, row_factory=dict_row)
-        self.database_path.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self.database_path)
+            postgres_url = make_url(self.database_url).set(drivername="postgresql")
+            return psycopg.connect(postgres_url.render_as_string(hide_password=False), row_factory=dict_row)
+        sqlite_url = make_url(self.database_url) if self.database_url else None
+        sqlite_path = Path(sqlite_url.database) if sqlite_url and sqlite_url.database not in (None, ":memory:") else self.database_path
+        sqlite_path.parent.mkdir(parents=True, exist_ok=True)
+        connection = sqlite3.connect(sqlite_path if not sqlite_url or sqlite_url.database != ":memory:" else ":memory:")
         connection.row_factory = sqlite3.Row
         return connection
 
     def initialize(self) -> None:
         with self._connect() as connection:
             self._initialize_categories(connection)
-            if self.database_url:
+            if self.is_postgres:
                 connection.execute(
                     """
-                    CREATE TABLE IF NOT EXISTS products (
+                    CREATE TABLE IF NOT EXISTS explore_products (
                         id TEXT PRIMARY KEY, title TEXT NOT NULL, category TEXT NOT NULL,
-                        category_id TEXT REFERENCES categories(id),
+                        category_id TEXT REFERENCES explore_categories(id),
                         price DOUBLE PRECISION NOT NULL, rating DOUBLE PRECISION NOT NULL,
                         total_reviews INTEGER NOT NULL, seller_name TEXT NOT NULL,
                         is_verified_seller BOOLEAN NOT NULL, badge TEXT, image_url TEXT NOT NULL,
@@ -71,7 +69,7 @@ class ProductRepository:
                 with connection.cursor() as cursor:
                     cursor.executemany(
                         """
-                        INSERT INTO products (
+                        INSERT INTO explore_products (
                             id, title, category, price, rating, total_reviews, seller_name,
                             is_verified_seller, badge, image_url, semantic_tags, description,
                             fit, trust, search_terms
@@ -96,12 +94,12 @@ class ProductRepository:
                     )
                 self._refresh_image_urls(connection, "%s")
                 self._refresh_seed_metadata(connection, "%s")
-                connection.execute("CREATE INDEX IF NOT EXISTS idx_products_category_id ON products(category_id)")
-                connection.execute("CREATE INDEX IF NOT EXISTS idx_products_price ON products(price)")
+                connection.execute("CREATE INDEX IF NOT EXISTS idx_explore_products_category_id ON explore_products(category_id)")
+                connection.execute("CREATE INDEX IF NOT EXISTS idx_explore_products_price ON explore_products(price)")
                 return
             connection.execute(
                 """
-                CREATE TABLE IF NOT EXISTS products (
+                CREATE TABLE IF NOT EXISTS explore_products (
                     id TEXT PRIMARY KEY,
                     title TEXT NOT NULL,
                     category TEXT NOT NULL,
@@ -124,7 +122,7 @@ class ProductRepository:
             self._migrate_legacy_categories(connection, "?")
             connection.executemany(
                 """
-                INSERT INTO products (
+                INSERT INTO explore_products (
                     id, title, category, price, rating, total_reviews,
                     seller_name, is_verified_seller, badge, image_url,
                     semantic_tags, description, fit, trust, search_terms
@@ -149,36 +147,36 @@ class ProductRepository:
             )
             self._refresh_image_urls(connection, "?")
             self._refresh_seed_metadata(connection, "?")
-            connection.execute("CREATE INDEX IF NOT EXISTS idx_products_category_id ON products(category_id)")
-            connection.execute("CREATE INDEX IF NOT EXISTS idx_products_price ON products(price)")
+            connection.execute("CREATE INDEX IF NOT EXISTS idx_explore_products_category_id ON explore_products(category_id)")
+            connection.execute("CREATE INDEX IF NOT EXISTS idx_explore_products_price ON explore_products(price)")
 
     def _initialize_categories(self, connection: Any) -> None:
-        if self.database_url:
+        if self.is_postgres:
             connection.execute(
-                "CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, slug TEXT NOT NULL UNIQUE)"
+                "CREATE TABLE IF NOT EXISTS explore_categories (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, slug TEXT NOT NULL UNIQUE)"
             )
             with connection.cursor() as cursor:
                 cursor.executemany(
-                    "INSERT INTO categories (id, name, slug) VALUES (%s, %s, %s) ON CONFLICT (id) DO NOTHING",
+                    "INSERT INTO explore_categories (id, name, slug) VALUES (%s, %s, %s) ON CONFLICT (id) DO NOTHING",
                     self._category_rows(),
                 )
             return
         connection.execute(
-            "CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, slug TEXT NOT NULL UNIQUE)"
+            "CREATE TABLE IF NOT EXISTS explore_categories (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, slug TEXT NOT NULL UNIQUE)"
         )
         connection.executemany(
-            "INSERT OR IGNORE INTO categories (id, name, slug) VALUES (?, ?, ?)",
+            "INSERT OR IGNORE INTO explore_categories (id, name, slug) VALUES (?, ?, ?)",
             self._category_rows(),
         )
 
     def _ensure_product_category_column(self, connection: Any, placeholder: str) -> None:
-        if self.database_url:
-            connection.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS category_id TEXT REFERENCES categories(id)")
+        if self.is_postgres:
+            connection.execute("ALTER TABLE explore_products ADD COLUMN IF NOT EXISTS category_id TEXT REFERENCES explore_categories(id)")
         else:
-            columns = {row[1] for row in connection.execute("PRAGMA table_info(products)").fetchall()}
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(explore_products)").fetchall()}
             if "category_id" not in columns:
-                connection.execute("ALTER TABLE products ADD COLUMN category_id TEXT")
-        update_sql = f"UPDATE products SET category_id = {placeholder} WHERE category = {placeholder}"
+                connection.execute("ALTER TABLE explore_products ADD COLUMN category_id TEXT")
+        update_sql = f"UPDATE explore_products SET category_id = {placeholder} WHERE category = {placeholder}"
         rows = [(category["id"], category["name"]) for category in self._category_models()]
         if placeholder == "%s":
             with connection.cursor() as cursor:
@@ -190,10 +188,10 @@ class ProductRepository:
         legacy_name = "Households"
         canonical_name = "Home & Living"
         legacy = connection.execute(
-            f"SELECT id FROM categories WHERE name = {placeholder}", (legacy_name,)
+            f"SELECT id FROM explore_categories WHERE name = {placeholder}", (legacy_name,)
         ).fetchone()
         canonical = connection.execute(
-            f"SELECT id FROM categories WHERE name = {placeholder}", (canonical_name,)
+            f"SELECT id FROM explore_categories WHERE name = {placeholder}", (canonical_name,)
         ).fetchone()
         if legacy is None or canonical is None:
             return
@@ -201,12 +199,12 @@ class ProductRepository:
         legacy_id = legacy["id"] if self.database_url else legacy[0]
         canonical_id = canonical["id"] if self.database_url else canonical[0]
         connection.execute(
-            f"UPDATE products SET category = {placeholder}, category_id = {placeholder} "
+            f"UPDATE explore_products SET category = {placeholder}, category_id = {placeholder} "
             f"WHERE category = {placeholder} OR category_id = {placeholder}",
             (canonical_name, canonical_id, legacy_name, legacy_id),
         )
         connection.execute(
-            f"DELETE FROM categories WHERE id = {placeholder}", (legacy_id,)
+            f"DELETE FROM explore_categories WHERE id = {placeholder}", (legacy_id,)
         )
 
     @staticmethod
@@ -219,7 +217,7 @@ class ProductRepository:
         return [(category["id"], category["name"], category["slug"]) for category in cls._category_models()]
 
     def _refresh_image_urls(self, connection: Any, placeholder: str) -> None:
-        update_sql = f"UPDATE products SET image_url = {placeholder} WHERE id = {placeholder}"
+        update_sql = f"UPDATE explore_products SET image_url = {placeholder} WHERE id = {placeholder}"
         image_rows = [(product["image_url"], product["id"]) for product in PRODUCTS]
         if placeholder == "%s":
             with connection.cursor() as cursor:
@@ -228,7 +226,7 @@ class ProductRepository:
             connection.executemany(update_sql, image_rows)
 
     def _refresh_seed_metadata(self, connection: Any, placeholder: str) -> None:
-        update_sql = f"UPDATE products SET semantic_tags = {placeholder} WHERE id = {placeholder}"
+        update_sql = f"UPDATE explore_products SET semantic_tags = {placeholder} WHERE id = {placeholder}"
         tag_rows = [(json.dumps(product["semantic_tags"]), product["id"]) for product in PRODUCTS]
         if placeholder == "%s":
             with connection.cursor() as cursor:
@@ -259,7 +257,7 @@ class ProductRepository:
     def list_products(self) -> list[dict[str, Any]]:
         self.initialize()
         with self._connect() as connection:
-            rows = connection.execute("SELECT * FROM products").fetchall()
+            rows = connection.execute("SELECT * FROM explore_products").fetchall()
         products = [self._deserialize(row) for row in rows]
         catalog_order = {product["id"]: index for index, product in enumerate(PRODUCTS)}
         return sorted(products, key=lambda product: catalog_order.get(product["id"], len(catalog_order)))
@@ -267,23 +265,23 @@ class ProductRepository:
     def get_product(self, product_id: str) -> dict[str, Any] | None:
         self.initialize()
         with self._connect() as connection:
-            placeholder = "%s" if self.database_url else "?"
-            row = connection.execute(f"SELECT * FROM products WHERE id = {placeholder}", (product_id,)).fetchone()
+            placeholder = "%s" if self.is_postgres else "?"
+            row = connection.execute(f"SELECT * FROM explore_products WHERE id = {placeholder}", (product_id,)).fetchone()
         return self._deserialize(row) if row else None
 
     def list_categories(self) -> list[dict[str, Any]]:
         self.initialize()
         with self._connect() as connection:
-            if self.database_url:
+            if self.is_postgres:
                 rows = connection.execute(
                     "SELECT c.id, c.name, c.slug, COUNT(p.id) AS product_count "
-                    "FROM categories c LEFT JOIN products p ON p.category_id = c.id "
+                    "FROM explore_categories c LEFT JOIN explore_products p ON p.category_id = c.id "
                     "GROUP BY c.id, c.name, c.slug ORDER BY c.name"
                 ).fetchall()
             else:
                 rows = connection.execute(
                     "SELECT c.id, c.name, c.slug, COUNT(p.id) AS product_count "
-                    "FROM categories c LEFT JOIN products p ON p.category_id = c.id "
+                    "FROM explore_categories c LEFT JOIN explore_products p ON p.category_id = c.id "
                     "GROUP BY c.id, c.name, c.slug ORDER BY c.name"
                 ).fetchall()
         return [dict(row) for row in rows]
@@ -293,23 +291,23 @@ class ProductRepository:
         verified_only: bool = False, min_rating: float = 0,
     ) -> tuple[list[dict[str, Any]], int]:
         self.initialize()
-        placeholder = "%s" if self.database_url else "?"
+        placeholder = "%s" if self.is_postgres else "?"
         order_by = {"price_low_high": "p.price ASC", "price_high_low": "p.price DESC", "rating": "p.rating DESC"}.get(sort_by, "p.rating DESC")
         filters = [f"c.slug = {placeholder}", f"p.price BETWEEN {placeholder} AND {placeholder}", f"p.rating >= {placeholder}"]
         params: list[Any] = [category_slug, min_price, max_price, min_rating]
         if verified_only:
-            filters.append("p.is_verified_seller = TRUE" if self.database_url else "p.is_verified_seller = 1")
+            filters.append("p.is_verified_seller = TRUE" if self.is_postgres else "p.is_verified_seller = 1")
         where_clause = " AND ".join(filters)
         offset = (page - 1) * limit
         with self._connect() as connection:
             count_sql = (
-                f"SELECT COUNT(*) AS total FROM products p JOIN categories c ON c.id = p.category_id "
+                f"SELECT COUNT(*) AS total FROM explore_products p JOIN explore_categories c ON c.id = p.category_id "
                 f"WHERE {where_clause}"
             )
             count_row = connection.execute(count_sql, tuple(params)).fetchone()
-            total = count_row["total"] if self.database_url else count_row[0]
+            total = count_row["total"] if self.is_postgres else count_row[0]
             query_sql = (
-                f"SELECT p.* FROM products p JOIN categories c ON c.id = p.category_id "
+                f"SELECT p.* FROM explore_products p JOIN explore_categories c ON c.id = p.category_id "
                 f"WHERE {where_clause} "
                 f"ORDER BY {order_by} LIMIT {placeholder} OFFSET {placeholder}"
             )
