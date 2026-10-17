@@ -9,6 +9,7 @@ class SellerProfile(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    seller_key = Column(String(160), nullable=True, unique=True)
     role = Column(String(10), nullable=False, default="seller", server_default="seller")
     trust_score = Column(Float, nullable=True)
     compliance_status = Column(String(24), nullable=False, default="pending", server_default="pending")

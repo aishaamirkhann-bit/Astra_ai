@@ -60,7 +60,8 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("FRONTEND_URL", "FRONTEND_ORIGIN"),
     )
 
-    APPROVAL_WINDOW_SECONDS: int = 30
+    APPROVAL_WINDOW_SECONDS: int = 60
+    REVERSAL_MONITOR_INTERVAL_SECONDS: int = 5
     CHECKOUT_SESSION_TTL_SECONDS: int = 600
 
     # --- Email OTP (2FA) ---

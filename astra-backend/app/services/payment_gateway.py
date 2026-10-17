@@ -68,6 +68,13 @@ def create_topup_intent(amount_pkr: float, user_id: int, reference: str) -> Card
         automatic_payment_methods={"enabled": True},
         metadata={"kind": "wallet_topup", "user_id": str(user_id), "reference": reference},
     )
+    log.info("stripe intent created: %s for user %s (Rs. %.2f)", intent.id, user_id, amount_pkr)
+    return CardTopUpIntent(
+        intent_id=intent.id,
+        client_secret=intent.client_secret or "",
+        amount=amount_pkr,
+        currency="pkr",
+    )
 
 
 def create_checkout_session(
@@ -115,23 +122,39 @@ def retrieve_connect_account(account_id: str) -> Any:
     return _client().accounts.retrieve(account_id)
 
 
-def create_seller_transfer(amount_paisa: int, account_id: str, order_id: int) -> str:
+def create_seller_transfer(
+    amount_paisa: int,
+    account_id: str,
+    order_id: int,
+    *,
+    idempotency_key: str | None = None,
+) -> str:
     transfer = _client().transfers.create(
         amount=amount_paisa,
         currency="pkr",
         destination=account_id,
         metadata={"astra_order_id": str(order_id)},
-        options={"idempotency_key": f"astra-order-payout-{order_id}"},
+        options={"idempotency_key": idempotency_key or f"astra-order-payout-{order_id}"},
     )
     return transfer.id
 
 
-def refund_payment_intent(payment_intent_id: str, order_id: int, amount_paisa: int) -> str:
+def refund_payment_intent(
+    payment_intent_id: str,
+    order_id: int | None,
+    amount_paisa: int,
+    *,
+    idempotency_key: str | None = None,
+    checkout_ref: str | None = None,
+) -> str:
     refund = _client().refunds.create(
         payment_intent=payment_intent_id,
         amount=amount_paisa,
-        metadata={"astra_order_id": str(order_id)},
-        options={"idempotency_key": f"astra-order-refund-{order_id}"},
+        metadata={
+            **({"astra_order_id": str(order_id)} if order_id is not None else {}),
+            **({"astra_checkout_ref": checkout_ref} if checkout_ref else {}),
+        },
+        options={"idempotency_key": idempotency_key or f"astra-order-refund-{order_id}"},
     )
     return refund.id
 
@@ -142,13 +165,6 @@ def expire_checkout_session(session_id: str) -> None:
 
 def retrieve_checkout_session(session_id: str) -> Any:
     return _client().checkout.sessions.retrieve(session_id)
-    log.info("stripe intent created: %s for user %s (Rs. %.2f)", intent.id, user_id, amount_pkr)
-    return CardTopUpIntent(
-        intent_id=intent.id,
-        client_secret=intent.client_secret or "",
-        amount=amount_pkr,
-        currency="pkr",
-    )
 
 
 def construct_webhook_event(payload: bytes, signature: str) -> stripe.Event:

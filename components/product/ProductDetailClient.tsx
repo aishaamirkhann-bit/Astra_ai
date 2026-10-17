@@ -16,6 +16,7 @@ export default function ProductDetailClient({ initialProduct }: { initialProduct
   const [color, setColor] = useState(initialProduct.variants.colors[0] ?? ""); const [size, setSize] = useState(initialProduct.variants.sizes[0] ?? ""); const [storage, setStorage] = useState(initialProduct.variants.storage[0] ?? "");
   const [quantity, setQuantity] = useState(1); const [zoom, setZoom] = useState(false); const [busy, setBusy] = useState<"cart"|"buy"|"goal"|null>(null); const [notice, setNotice] = useState(""); const [error, setError] = useState("");
   const [consentOpen, setConsentOpen] = useState(false); const [checkout, setCheckout] = useState<CheckoutSession | null>(null); const [address, setAddress] = useState(""); const [goalOpen, setGoalOpen] = useState(false); const [goalDeposit, setGoalDeposit] = useState(""); const [chatOpen, setChatOpen] = useState(false); const [negotiateOpen, setNegotiateOpen] = useState(false); const [tab, setTab] = useState<"specs" | "audit">("specs");
+  const [checkoutMode, setCheckoutMode] = useState<"wallet" | "card">("wallet");
   const [audit, setAudit] = useState<AuthenticityAudit | null>(null); const [voiceIntent, setVoiceIntent] = useState(false);
   useEffect(() => { const socket = new WebSocket(getDealsWebSocketUrl()); socket.onmessage = (event) => { try { const payload = JSON.parse(event.data) as { product_id?: string; type?: string }; if (!payload.product_id || payload.product_id === product.slug) void getProduct(product.slug).then(setProduct); } catch {} }; return () => socket.close(); }, [product.slug]);
   useEffect(() => { void getProductAuthenticity(initialProduct.slug).then(setAudit).catch(() => undefined); }, [initialProduct.slug]);
@@ -37,6 +38,7 @@ export default function ProductDetailClient({ initialProduct }: { initialProduct
     try {
       await addToCart(product.slug, quantity, selection);
       const session = await createCheckoutSession({ shipping_address: shippingAddress });
+      setCheckoutMode("wallet");
       setCheckout(session);
       setConsentOpen(true);
       setNotice("Checkout reserved. Authorize the exact total to continue.");
@@ -59,9 +61,28 @@ export default function ProductDetailClient({ initialProduct }: { initialProduct
     setBusy("buy"); setError("");
     try {
       await addToCart(product.slug, quantity, selection);
-      const result = await createStripeCheckout({ shipping_address: address });
-      window.location.assign(result.checkout_url);
+      const session = await createCheckoutSession({ shipping_address: address });
+      setCheckoutMode("card");
+      setCheckout(session);
+      setConsentOpen(true);
+      setNotice("Checkout reserved. Authorize the exact total to continue.");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Card checkout could not be started"); setBusy(null); }
+    finally { setBusy(null); }
+  }
+  async function completeCardCheckout(consentId: string) {
+    if (!checkout) return;
+    setBusy("buy"); setError("");
+    try {
+      const result = await createStripeCheckout({
+        shipping_address: address,
+        checkout_ref: checkout.checkout_ref,
+        consent_id: consentId,
+      });
+      window.location.assign(result.checkout_url);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Card checkout could not be started");
+      setBusy(null);
+    }
   }
   function closeConsent() {
     setConsentOpen(false);
@@ -84,7 +105,7 @@ export default function ProductDetailClient({ initialProduct }: { initialProduct
     </div></div>
     {zoom && <button onClick={() => setZoom(false)} className="fixed inset-0 z-[80] grid place-items-center bg-slate-950/90 p-6"><img src={image} alt={product.name} className="max-h-full max-w-full rounded-3xl object-contain" /></button>}
     {goalOpen && <div className="fixed inset-0 z-[85] grid place-items-center bg-slate-950/75 p-4"><section className="glass w-full max-w-md rounded-3xl p-6"><h2 className="font-display text-lg font-bold text-white">Save to Shopping Goal</h2><p className="mt-2 text-xs text-ink-500">Target: Rs. {(product.price*quantity).toLocaleString()}</p><input type="number" min="0" value={goalDeposit} onChange={(e)=>setGoalDeposit(e.target.value)} placeholder="Initial allocation (optional)" className="mt-4 w-full rounded-xl border border-base-600 bg-base-900 px-4 py-3 text-xs text-white"/><div className="mt-4 grid grid-cols-2 gap-2"><button onClick={()=>void saveGoal()} className="rounded-xl bg-astra-gradient py-3 text-xs font-bold text-white">Save Goal</button><button onClick={()=>setGoalOpen(false)} className="rounded-xl border border-base-600 text-xs text-ink-300">Cancel</button></div></section></div>}
-    <FinancialConsentModal open={consentOpen && Boolean(checkout)} amount={checkout?.total ?? 0} checkoutRef={checkout?.checkout_ref ?? ""} initialTab={voiceIntent ? "OTP" : "Voice"} onClose={closeConsent} onAuthorized={completeCheckout} />
+    <FinancialConsentModal open={consentOpen && Boolean(checkout)} amount={checkout?.total ?? 0} checkoutRef={checkout?.checkout_ref ?? ""} initialTab={voiceIntent ? "OTP" : "Voice"} onClose={closeConsent} onAuthorized={checkoutMode === "card" ? completeCardCheckout : completeCheckout} />
     <SellerChatDrawer open={chatOpen} productId={product.slug} productName={product.name} sellerName={product.seller} onClose={() => setChatOpen(false)} />
     <NegotiatorModal open={negotiateOpen} productId={product.slug} productName={product.name} listPrice={product.price} onClose={() => setNegotiateOpen(false)} />
   </>;

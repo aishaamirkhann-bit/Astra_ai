@@ -1,4 +1,7 @@
 """Payment rails: method discovery, unconfigured degradation, idempotent webhook settlement."""
+from types import SimpleNamespace
+from uuid import uuid4
+
 from fastapi.testclient import TestClient
 
 import app.services.payment_gateway as payment_gateway
@@ -20,6 +23,38 @@ def test_card_topup_503_without_stripe(auth_token: str) -> None:
     with TestClient(app, headers={"Authorization": f"Bearer {auth_token}"}) as client:
         response = client.post("/api/v1/payments/card/topup", json={"amount": 5000})
     assert response.status_code == 503
+
+
+def test_configured_card_topup_returns_mocked_payment_intent(auth_client, monkeypatch) -> None:
+    calls: list[dict] = []
+    intent_id = f"pi_topup_{uuid4().hex}"
+
+    class MockPaymentIntents:
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(id=intent_id, client_secret="pi_secret_mock")
+
+    monkeypatch.setattr(payment_gateway, "stripe_configured", lambda: True)
+    monkeypatch.setattr(
+        payment_gateway,
+        "_client",
+        lambda: SimpleNamespace(payment_intents=MockPaymentIntents()),
+    )
+    response = auth_client.post("/api/v1/payments/card/topup", json={"amount": 2500})
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "intent_id": intent_id,
+        "client_secret": "pi_secret_mock",
+        "amount": 2500.0,
+        "currency": "pkr",
+    }
+    assert calls[0]["amount"] == 250_000
+    assert calls[0]["currency"] == "pkr"
+    with SessionLocal() as db:
+        topup = db.get(CardTopUp, intent_id)
+        assert topup is not None and topup.status == "requires_payment"
+        db.delete(topup)
+        db.commit()
 
 
 def test_webhook_settles_topup_exactly_once(auth_token: str, monkeypatch) -> None:

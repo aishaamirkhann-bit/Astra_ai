@@ -18,10 +18,9 @@ from app.models.seller_wallet import SellerWallet, SellerWalletEntry
 from app.services.barcode_catalog import lookup_barcode
 from app.services.checkout_fsm import dispatch_confirmed_order
 from app.services.seller_payouts import (
-    SellerPayoutProcessor,
-    SellerPayoutsUnavailable,
     connect_account_status,
-    get_seller_payout_processor,
+    retry_seller_transfers,
+    SellerPayoutsUnavailable,
     start_connect_onboarding,
 )
 
@@ -278,12 +277,19 @@ def seller_wallet(db: Session = Depends(get_db), seller: User = Depends(get_curr
 def request_payout(
     payload: PayoutRequestInput,
     seller: User = Depends(get_current_active_seller),
-    processor: SellerPayoutProcessor = Depends(get_seller_payout_processor),
 ):
-    try:
-        return processor.request_payout(seller, payload.amount)
-    except SellerPayoutsUnavailable as error:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(error)) from error
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail="Manual payouts are disabled; released order balances transfer through Stripe Connect.",
+    )
+
+
+@router.post("/connect/retry-transfers")
+def retry_payout_transfers(
+    db: Session = Depends(get_db),
+    seller: User = Depends(get_current_active_seller),
+):
+    return {"retried": retry_seller_transfers(db, seller)}
 
 
 @router.post("/connect/onboarding")

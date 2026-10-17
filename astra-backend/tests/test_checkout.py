@@ -9,6 +9,8 @@ from app.models.checkout import CheckoutSession
 from app.models.product import Product
 from app.models.user import User
 from app.models.wallet import FinancialConsentLog, UserWallet, WalletTransaction
+from app.core.config import Settings, settings
+from app.services import checkout_fsm
 from app.services.checkout_fsm import abandon_checkout_session, expire_checkout_sessions, finalize_reversal_orders
 
 
@@ -317,4 +319,47 @@ def test_reversal_finalization_updates_checkout_session_status(auth_client) -> N
                     if budget and budget_before is not None:
                         budget.current_spent = budget_before
                     db.commit()
+        _reset_checkout_state(auth_client)
+
+
+def test_approval_window_can_be_overridden_from_environment(monkeypatch) -> None:
+    monkeypatch.setenv("APPROVAL_WINDOW_SECONDS", "75")
+
+    assert Settings(_env_file=None).APPROVAL_WINDOW_SECONDS == 75
+
+
+@pytest.mark.parametrize(("elapsed_seconds", "expected_status"), [(59, 200), (61, 409)])
+def test_reversal_deadline_and_boundary(auth_client, monkeypatch, elapsed_seconds: int, expected_status: int) -> None:
+    _reset_checkout_state(auth_client)
+    order_refs: list[str] = []
+    paid_at = datetime.now(timezone.utc)
+    clock = [paid_at]
+    monkeypatch.setattr(checkout_fsm, "_now", lambda: clock[0])
+    monkeypatch.setattr(settings, "APPROVAL_WINDOW_SECONDS", 60)
+    try:
+        deal = _deal(auth_client)
+        _add_variant(auth_client, deal["slug"], f"Window {elapsed_seconds}")
+        session = _create_session(auth_client)
+        consent_id = _voice_consent(auth_client, session)
+        confirmed = auth_client.post(
+            f"/api/v1/checkout/session/{session['checkout_ref']}/confirm",
+            json={"consent_id": consent_id},
+        )
+        assert confirmed.status_code == 200, confirmed.text
+        order_refs = confirmed.json()["order_refs"]
+
+        listed = auth_client.get("/api/v1/orders")
+        assert listed.status_code == 200, listed.text
+        order = next(item for item in listed.json() if item["order_ref"] == order_refs[0])
+        deadline = datetime.fromisoformat(order["reversal_deadline"])
+        assert deadline == paid_at + timedelta(seconds=60)
+        assert order["reversal_window_seconds"] == 60
+
+        clock[0] = paid_at + timedelta(seconds=elapsed_seconds)
+        reversed_order = auth_client.post(f"/api/v1/orders/{order_refs[0]}/reverse")
+        assert reversed_order.status_code == expected_status, reversed_order.text
+    finally:
+        clock[0] = paid_at + timedelta(seconds=59)
+        for order_ref in order_refs:
+            auth_client.post(f"/api/v1/orders/{order_ref}/reverse")
         _reset_checkout_state(auth_client)

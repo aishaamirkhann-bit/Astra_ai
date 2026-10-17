@@ -25,6 +25,7 @@ from app.realtime.negotiation_ws import router as negotiation_ws_router
 from app.db.runtime_migrations import apply_sqlite_compatibility_migrations, migrate_legacy_wallet_data
 from app.services.deal_events import deal_event_bus
 from app.services.checkout_fsm import expire_checkout_sessions, finalize_reversal_orders
+from app.services.stripe_checkout import retry_failed_checkout_refunds
 from app.services.deals_pipeline import bootstrap_deals_data, evaluate_deals, release_expired_reservations
 from app.services.market_feed import record_market_observations
 from app.services.budget_agent import evaluate_all_budget_matches
@@ -100,6 +101,7 @@ async def lifespan(app: FastAPI):
         try:
             bootstrap_deals_data(db)
             expire_checkout_sessions(db)
+            retry_failed_checkout_refunds(db)
             finalize_reversal_orders(db)
             record_market_observations(db)
             deal_events = [*release_expired_reservations(db), *evaluate_deals(db)]
@@ -111,10 +113,17 @@ async def lifespan(app: FastAPI):
         db = SessionLocal()
         try:
             expire_checkout_sessions(db)
-            finalize_reversal_orders(db)
+            retry_failed_checkout_refunds(db)
             record_market_observations(db)
             deal_events = [*release_expired_reservations(db), *evaluate_deals(db)]
             return [*deal_events, *evaluate_all_budget_matches(db)]
+        finally:
+            db.close()
+
+    def run_reversal_monitor_cycle() -> None:
+        db = SessionLocal()
+        try:
+            finalize_reversal_orders(db)
         finally:
             db.close()
 
@@ -134,14 +143,23 @@ async def lifespan(app: FastAPI):
                 if isinstance(event, dict) and event.get("user_id"):
                     await notification_manager.broadcast(event["user_id"], event)
 
+    async def monitor_reversals() -> None:
+        while True:
+            await asyncio.sleep(settings.REVERSAL_MONITOR_INTERVAL_SECONDS)
+            await asyncio.to_thread(run_reversal_monitor_cycle)
+
     monitor_task = asyncio.create_task(monitor_deals(), name="astra-deal-trust-agent")
+    reversal_monitor_task = asyncio.create_task(monitor_reversals(), name="astra-reversal-monitor")
     app.state.deal_event_bus = deal_event_bus
     try:
         yield
     finally:
         monitor_task.cancel()
+        reversal_monitor_task.cancel()
         with suppress(asyncio.CancelledError):
             await monitor_task
+        with suppress(asyncio.CancelledError):
+            await reversal_monitor_task
         await deal_event_bus.stop()
 
 

@@ -55,7 +55,7 @@ def test_b2b_evaluate_rejects_untrusted_agent(auth_client) -> None:
         "protocol": "ACP/2.0",
         "action": "checkout.request",
         "agent": {"id": "rogue-agent", "trust_tier": "unverified"},
-        "order": {"total": 15000, "currency": "PKR", "reversible_window_s": 30},
+        "order": {"total": 15000, "currency": "PKR", "reversible_window_s": 60},
     }
     response = auth_client.post("/api/v1/b2b/evaluate", json=payload)
     assert response.status_code == 200

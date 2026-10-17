@@ -151,8 +151,8 @@ def test_seller_payout_is_disabled_without_touching_buyer_wallet() -> None:
     before = client.get("/api/v1/seller/wallet")
     assert before.status_code == 200
     payout = client.post("/api/v1/seller/wallet/payout", json={"amount": 500})
-    assert payout.status_code == 503
-    assert "settlement ledger" in payout.json()["detail"]
+    assert payout.status_code == 409
+    assert "Manual payouts are disabled" in payout.json()["detail"]
     after = client.get("/api/v1/seller/wallet")
     assert after.status_code == 200
     assert after.json() == before.json()

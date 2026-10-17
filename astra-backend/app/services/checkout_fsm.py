@@ -11,7 +11,7 @@ from app.models.cart import CartItem
 from app.models.checkout import CheckoutSession
 from app.models.deal import Deal, DealAuditLog, DealReservation
 from app.models.order import Order, OrderStatus
-from app.models.payment import StripeCheckoutPayment
+from app.models.payment import StripeCheckoutPayment, StripeRefund
 from app.models.product import Product
 from app.models.user import User
 from app.models.wallet import FinancialConsentLog, UserWallet, WalletTransaction
@@ -140,18 +140,54 @@ def _release_session_reservation(db: Session, session: CheckoutSession, target_s
     return True
 
 
+def release_checkout_session(db: Session, session: CheckoutSession, target_status: str) -> bool:
+    if target_status not in {CANCELLED, EXPIRED}:
+        raise ValueError("Checkout release status must be cancelled or expired")
+    return _release_session_reservation(db, session, target_status)
+
+
 def expire_checkout_sessions(db: Session) -> int:
-    sessions = (
-        db.query(CheckoutSession)
-        .filter(
+    now = _now()
+    candidate_ids = [
+        session.id
+        for session in db.query(CheckoutSession).filter(CheckoutSession.status == AWAITING_CONSENT).all()
+        if as_aware_utc(session.expires_at) <= now
+    ]
+    expired = 0
+    reconciled_paid = False
+    for session_id in candidate_ids:
+        session = db.query(CheckoutSession).filter(
+            CheckoutSession.id == session_id,
             CheckoutSession.status == AWAITING_CONSENT,
-            CheckoutSession.expires_at <= _now(),
-        )
-        .with_for_update()
-        .all()
-    )
-    expired = sum(1 for session in sessions if _release_session_reservation(db, session, EXPIRED))
-    if expired:
+        ).with_for_update().first()
+        if not session or as_aware_utc(session.expires_at) > now:
+            continue
+        payment = db.query(StripeCheckoutPayment).filter(
+            StripeCheckoutPayment.checkout_session_id == session.id,
+            StripeCheckoutPayment.status.in_(["pending", "pending_payment", "paid_webhook_pending"]),
+        ).with_for_update().first()
+        if payment:
+            try:
+                stripe_session = payment_gateway.retrieve_checkout_session(payment.stripe_session_id)
+            except Exception:
+                continue
+            if stripe_session.get("payment_status") == "paid":
+                from app.services.stripe_checkout import settle_paid_checkout
+
+                settle_paid_checkout(db, payment, stripe_session, actor="stripe:expiration-reconciliation")
+                reconciled_paid = True
+                continue
+            if stripe_session.get("status") == "complete":
+                continue
+            if stripe_session.get("status") == "open":
+                try:
+                    payment_gateway.expire_checkout_session(payment.stripe_session_id)
+                except Exception:
+                    continue
+            payment.status = "expired"
+        if _release_session_reservation(db, session, EXPIRED):
+            expired += 1
+    if expired or reconciled_paid:
         db.commit()
     return expired
 
@@ -288,6 +324,25 @@ def _require_consent(
     if checkout and consent.reference_checkout_id != checkout.id:
         raise HTTPException(status_code=status.HTTP_428_PRECONDITION_REQUIRED, detail=f"FINANCIAL_CONSENT_REQUIRED:{subject_ref}")
     return consent
+
+
+def require_card_checkout_consent(
+    db: Session,
+    user: User,
+    session: CheckoutSession,
+    consent_id: str,
+) -> FinancialConsentLog:
+    if session.status != AWAITING_CONSENT:
+        raise HTTPException(status_code=409, detail="Checkout session is no longer active")
+    if as_aware_utc(session.expires_at) <= _now():
+        _release_session_reservation(db, session, EXPIRED)
+        db.commit()
+        raise HTTPException(status_code=410, detail="Checkout session expired; cart items were restored")
+    orders = _orders_for_session(db, session)
+    if not orders or any(order.status != OrderStatus.PENDING_APPROVAL for order in orders):
+        raise HTTPException(status_code=409, detail="Checkout session orders are not awaiting approval")
+    _validate_session_snapshot(db, session, orders)
+    return _require_consent(db, user, session.total, consent_id, checkout=session)
 
 
 def _validate_session_snapshot(db: Session, session: CheckoutSession, orders: list[Order]) -> None:
@@ -515,7 +570,7 @@ def refund_reversible_order(db: Session, user: User, order: Order, reason: str, 
         if not card_payment.payment_intent_id:
             raise HTTPException(status_code=503, detail="Card refund is pending payment reconciliation")
         try:
-            payment_gateway.refund_payment_intent(
+            refund_id = payment_gateway.refund_payment_intent(
                 card_payment.payment_intent_id,
                 order.id,
                 int(round(order.price * 100)),
@@ -527,6 +582,13 @@ def refund_reversible_order(db: Session, user: User, order: Order, reason: str, 
             Order.id != order.id,
             Order.status != OrderStatus.CANCELLED,
         ).first()
+        db.add(StripeRefund(
+            refund_id=refund_id,
+            stripe_checkout_payment_id=card_payment.id,
+            order_id=order.id,
+            amount_paisa=int(round(order.price * 100)),
+            status="requested",
+        ))
         card_payment.status = "partially_refunded" if other_open_orders else "refunded"
         budget = db.query(UserBudget).filter(UserBudget.user_id == user.id).with_for_update().first()
         if budget:

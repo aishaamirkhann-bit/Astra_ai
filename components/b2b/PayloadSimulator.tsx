@@ -24,7 +24,7 @@ const SAMPLE_PAYLOADS: Record<(typeof PROTOCOLS)[number], string> = {
       protocol: "ACP/2.0",
       action: "checkout.request",
       agent: { id: "astra-orchestrator", trust_tier: "verified" },
-      order: { total: 314999, currency: "PKR", reversible_window_s: 30 },
+      order: { total: 314999, currency: "PKR", reversible_window_s: 60 },
     },
     null,
     2

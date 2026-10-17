@@ -20,7 +20,7 @@ PIPELINE_STAGES = [
     {"key": "approval", "label": "Human Approval", "latency": "waiting",
      "log": "Awaiting your confirmation."},
     {"key": "checkout", "label": "Reversible Checkout", "latency": "queued",
-     "log": "30s reversal window will open on approval."},
+    "log": "1-minute reversal window will open on approval."},
 ]
 
 

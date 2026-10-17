@@ -7,7 +7,7 @@ export default function OrdersPage() {
     <PageShell
       active="Orders"
       title="Orders & Reversible Checkout"
-      subtitle="Every order carries a 30-second grace window and an immutable consent record."
+      subtitle="Every order carries a 1-minute grace window and an immutable consent record."
     >
       <ActiveOrdersList />
       <AuditLogView />

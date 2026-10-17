@@ -191,9 +191,12 @@ def seed():
                 profile = SellerProfile(
                     user_id=seller.id, role="seller", trust_score=88,
                     compliance_status="verified", authenticity_score=91, total_revenue=0,
+                    seller_key=slug,
                 )
                 db.add(profile)
                 db.flush()
+            elif profile.seller_key is None:
+                profile.seller_key = slug
             if db.query(SellerWallet).filter(SellerWallet.seller_id == seller.id).first() is None:
                 db.add(SellerWallet(seller_id=seller.id, available_balance=0, pending_payouts=0))
 
@@ -248,6 +251,7 @@ def seed():
                 existing_product.semantic_tags = p["semantic_tags"]
                 existing_product.stock_count = p.get("stock_count", existing_product.stock_count)
         db.flush()
+        db.commit()
 
         # The category browser uses the lightweight Explore catalog store.
         # Keep it populated from the same rows so seeded listings are visible

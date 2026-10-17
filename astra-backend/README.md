@@ -114,6 +114,19 @@ python -m uvicorn app.main:app --reload
 python -m pytest -q
 ```
 
+Pytest never uses the application database: it selects `TEST_DATABASE_URL`
+before importing the app and seeds only that database. If unset, it creates a
+unique temporary SQLite database. To use a local PostgreSQL test database:
+
+```powershell
+$env:TEST_DATABASE_URL = "postgresql://localhost/astra_test"
+python -m pytest -q
+```
+
+Tests refuse to run with `APP_ENV=production`, or when `DATABASE_URL` or
+`TEST_DATABASE_URL` contains a known remote host (`neon.tech`, `render.com`,
+`amazonaws`, or `supabase`). Never point tests at production data.
+
 From the repository root, run the frontend with `npm run dev` and open
 `http://localhost:3000`. Backend API docs are at `http://localhost:8000/docs`.
 

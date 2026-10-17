@@ -52,13 +52,8 @@ def record_order_payouts(db: Session, orders: list[Order]) -> None:
         if existing:
             continue
         product: Product = order.product
-        matches = (
-            db.query(User)
-            .join(SellerProfile, SellerProfile.user_id == User.id)
-            .filter(User.role == "seller", User.name == product.seller_name)
-            .all()
-        )
-        seller = matches[0] if len(matches) == 1 else None
+        seller_profile = db.query(SellerProfile).filter(SellerProfile.seller_key == product.seller_id).first()
+        seller = db.get(User, seller_profile.user_id) if seller_profile else None
         fee, seller_amount = payout_amounts(order.price)
         entry = SellerPayoutLedger(
             order_id=order.id,
@@ -82,7 +77,7 @@ def record_order_payouts(db: Session, orders: list[Order]) -> None:
 def process_order_payout(db: Session, order: Order) -> None:
     """Transfer a seller's net share only after the reversible escrow window closes."""
     entry = db.query(SellerPayoutLedger).filter(SellerPayoutLedger.order_id == order.id).with_for_update().first()
-    if entry is None or entry.status not in {"queued", "pending_onboarding", "connect_disabled"}:
+    if entry is None or entry.status not in {"queued", "pending_onboarding", "connect_disabled", "transfer_failed"}:
         return
     if not payment_gateway.stripe_connect_configured():
         return
@@ -90,13 +85,30 @@ def process_order_payout(db: Session, order: Order) -> None:
     if not account or not account.payouts_enabled:
         entry.status = "pending_onboarding"
         return
+    entry.transfer_attempts += 1
     try:
         entry.stripe_transfer_id = payment_gateway.create_seller_transfer(
-            int(round(entry.seller_amount * 100)), account.stripe_account_id, order.id
+            int(round(entry.seller_amount * 100)),
+            account.stripe_account_id,
+            order.id,
+            idempotency_key=f"astra-order-payout-{order.id}-{entry.transfer_attempts}",
         )
         entry.status = "transferred"
     except Exception:
         entry.status = "transfer_failed"
+
+
+def retry_seller_transfers(db: Session, seller: User) -> int:
+    entries = db.query(SellerPayoutLedger).filter(
+        SellerPayoutLedger.seller_user_id == seller.id,
+        SellerPayoutLedger.status == "transfer_failed",
+    ).all()
+    for entry in entries:
+        order = db.get(Order, entry.order_id)
+        if order and order.escrow_status == "RELEASED":
+            process_order_payout(db, order)
+    db.commit()
+    return sum(entry.status == "transferred" for entry in entries)
 
 
 def start_connect_onboarding(db: Session, seller: User, refresh_url: str, return_url: str) -> str:
@@ -125,7 +137,7 @@ def connect_account_status(db: Session, seller: User) -> dict:
     if account.payouts_enabled:
         for entry in db.query(SellerPayoutLedger).filter(
             SellerPayoutLedger.seller_user_id == seller.id,
-            SellerPayoutLedger.status.in_(["pending_onboarding", "connect_disabled"]),
+            SellerPayoutLedger.status.in_( ["pending_onboarding", "connect_disabled", "transfer_failed"]),
         ).all():
             order = db.get(Order, entry.order_id)
             if order and order.escrow_status == "RELEASED":

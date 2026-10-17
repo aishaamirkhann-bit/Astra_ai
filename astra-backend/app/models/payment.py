@@ -34,6 +34,20 @@ class StripeCheckoutPayment(Base):
     paid_at = Column(DateTime(timezone=True), nullable=True)
 
 
+class StripeRefund(Base):
+    """Stripe refunds associated with an order or a late-paid checkout."""
+
+    __tablename__ = "stripe_refunds"
+
+    refund_id = Column(String(255), primary_key=True)
+    stripe_checkout_payment_id = Column(Integer, ForeignKey("stripe_checkout_payments.id", ondelete="CASCADE"), nullable=False, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id", ondelete="SET NULL"), nullable=True, index=True)
+    amount_paisa = Column(Integer, nullable=False)
+    status = Column(String(32), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
 class StripeWebhookEvent(Base):
     """Processed Stripe event ids prevent duplicate settlement work."""
 
@@ -69,6 +83,7 @@ class SellerPayoutLedger(Base):
     seller_amount = Column(Float, nullable=False)
     status = Column(String(32), nullable=False, default="queued")
     stripe_transfer_id = Column(String(255), nullable=True)
+    transfer_attempts = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (UniqueConstraint("order_id", name="uq_seller_payout_order"),)

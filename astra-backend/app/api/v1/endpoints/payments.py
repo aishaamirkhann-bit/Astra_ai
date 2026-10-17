@@ -10,16 +10,25 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_db
 from app.core.config import settings
 from app.models.payment import CardTopUp, StripeCheckoutPayment, StripeWebhookEvent
-from app.models.budget import UserBudget
 from app.models.checkout import CheckoutSession
-from app.models.order import Order, OrderStatus
+from app.models.order import Order
 from app.models.user import User
 from app.models.wallet import UserWallet, WalletTransaction
 from app.realtime.wallet_ws import manager as wallet_events
 from app.services import payment_gateway
 from app.services.audit import record_audit
-from app.services.checkout_fsm import abandon_checkout_session, create_or_reuse_checkout_session
-from app.services.seller_payouts import record_order_payouts
+from app.services.checkout_fsm import (
+    abandon_checkout_session,
+    get_owned_checkout_session,
+    require_card_checkout_consent,
+    release_checkout_session,
+)
+from app.services.stripe_checkout import (
+    mark_checkout_payment_failed,
+    reconcile_charge_refund,
+    reconcile_refund_object,
+    settle_paid_checkout,
+)
 
 log = logging.getLogger("astra.payments")
 router = APIRouter(prefix="/payments", tags=["Payments"])
@@ -34,6 +43,8 @@ class CardTopUpRequest(BaseModel):
 
 class CardCheckoutRequest(BaseModel):
     shipping_address: str = Field(min_length=8, max_length=500)
+    checkout_ref: str = Field(min_length=8, max_length=40)
+    consent_id: str = Field(min_length=1)
 
 
 def _stripe_unconfigured() -> HTTPException:
@@ -72,7 +83,7 @@ def create_order_checkout(
 ):
     if not payment_gateway.stripe_checkout_configured():
         raise _stripe_unconfigured()
-    checkout = create_or_reuse_checkout_session(db, current_user, payload.shipping_address)
+    checkout = get_owned_checkout_session(db, current_user, payload.checkout_ref, lock=True)
     if checkout.status != "awaiting_consent":
         raise HTTPException(status_code=409, detail="Checkout session is no longer active")
     existing = db.query(StripeCheckoutPayment).filter(
@@ -82,6 +93,8 @@ def create_order_checkout(
     if existing:
         return {"checkout_ref": checkout.checkout_ref, "checkout_url": existing.checkout_url, "status": existing.status}
 
+    consent = require_card_checkout_consent(db, current_user, checkout, payload.consent_id)
+    checkout.shipping_address = payload.shipping_address
     now = datetime.now(timezone.utc)
     checkout.expires_at = now + timedelta(minutes=30)
     orders = db.query(Order).filter(Order.checkout_session_id == checkout.id).order_by(Order.id).all()
@@ -114,6 +127,7 @@ def create_order_checkout(
         abandon_checkout_session(db, checkout, f"stripe-error:{current_user.email}")
         db.commit()
         raise HTTPException(status_code=502, detail="Could not start Stripe Checkout") from exc
+    consent.consumed_at = datetime.now(timezone.utc)
     payment = StripeCheckoutPayment(
         stripe_session_id=stripe_session_id,
         checkout_session_id=checkout.id,
@@ -148,6 +162,32 @@ def order_checkout_status(
     }
 
 
+@router.get("/checkout/by-session/{stripe_session_id}")
+def order_checkout_status_by_stripe_session(
+    stripe_session_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    payment = db.query(StripeCheckoutPayment).filter(
+        StripeCheckoutPayment.stripe_session_id == stripe_session_id,
+    ).first()
+    if payment is None:
+        raise HTTPException(status_code=404, detail="Stripe checkout session not found")
+    checkout = db.query(CheckoutSession).filter(
+        CheckoutSession.id == payment.checkout_session_id,
+        CheckoutSession.user_id == current_user.id,
+    ).first()
+    if checkout is None:
+        raise HTTPException(status_code=404, detail="Checkout not found")
+    return {
+        "checkout_ref": checkout.checkout_ref,
+        "stripe_session_id": payment.stripe_session_id,
+        "checkout_status": checkout.status,
+        "payment_status": payment.status,
+        "order_refs": [order.order_ref for order in checkout.orders],
+    }
+
+
 @router.post("/checkout/{checkout_ref}/cancel")
 def cancel_order_checkout(
     checkout_ref: str,
@@ -163,7 +203,7 @@ def cancel_order_checkout(
     payment = db.query(StripeCheckoutPayment).filter(
         StripeCheckoutPayment.checkout_session_id == checkout.id,
     ).first()
-    if payment and payment.status == "paid":
+    if payment and payment.status != "pending":
         return {"checkout_ref": checkout_ref, "payment_status": payment.status}
     if payment and payment.status == "pending":
         try:
@@ -171,8 +211,7 @@ def cancel_order_checkout(
         except Exception as exc:
             raise HTTPException(status_code=502, detail="Could not verify Stripe Checkout status; reserved items were kept") from exc
         if stripe_session.get("payment_status") == "paid":
-            payment.status = "paid_webhook_pending"
-            payment.payment_intent_id = stripe_session.get("payment_intent")
+            settle_paid_checkout(db, payment, stripe_session, actor=f"stripe:cancel-reconciliation:{checkout_ref}")
             db.commit()
             return {"checkout_ref": checkout_ref, "payment_status": payment.status}
         if stripe_session.get("status") == "complete":
@@ -184,8 +223,11 @@ def cancel_order_checkout(
                 payment_gateway.expire_checkout_session(payment.stripe_session_id)
             except Exception as exc:
                 raise HTTPException(status_code=502, detail="Could not close Stripe Checkout; reserved items were kept") from exc
-        payment.status = "cancelled"
-    abandon_checkout_session(db, checkout, f"stripe-cancel:{current_user.email}")
+        payment.status = "expired" if stripe_session.get("status") == "expired" else "cancelled"
+    if payment and payment.status == "expired":
+        release_checkout_session(db, checkout, "expired")
+    else:
+        abandon_checkout_session(db, checkout, f"stripe-cancel:{current_user.email}")
     db.commit()
     return {"checkout_ref": checkout_ref, "payment_status": payment.status if payment else "cancelled"}
 
@@ -247,46 +289,67 @@ async def stripe_order_webhook(
     if db.get(StripeWebhookEvent, event_id):
         return {"received": True, "duplicate": True}
     db.add(StripeWebhookEvent(event_id=event_id, event_type=event_type))
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        if db.get(StripeWebhookEvent, event_id):
+            return {"received": True, "duplicate": True}
+        raise
 
-    if event_type == "checkout.session.completed":
-        stripe_session = event["data"]["object"]
+    stripe_object = event.get("data", {}).get("object", {})
+    if event_type in {"checkout.session.completed", "checkout.session.async_payment_succeeded"}:
+        stripe_session = stripe_object
         payment = db.query(StripeCheckoutPayment).filter(
             StripeCheckoutPayment.stripe_session_id == stripe_session.get("id"),
         ).with_for_update().first()
-        if payment and payment.status != "paid":
-            checkout = db.query(CheckoutSession).filter(
-                CheckoutSession.id == payment.checkout_session_id,
-            ).with_for_update().first()
-            orders = db.query(Order).filter(Order.checkout_session_id == checkout.id).with_for_update().all() if checkout else []
-            paid_total = stripe_session.get("amount_total")
+        if payment:
             if stripe_session.get("payment_status") != "paid":
                 payment.status = "pending_payment"
-            elif checkout and paid_total is not None and int(paid_total) != int(round(checkout.total * 100)):
-                payment.status = "amount_mismatch"
-            elif checkout and orders and checkout.status == "awaiting_consent" and all(order.status == OrderStatus.PENDING_APPROVAL for order in orders):
-                now = datetime.now(timezone.utc)
-                payment.status = "paid"
-                payment.payment_intent_id = stripe_session.get("payment_intent")
-                payment.paid_at = now
-                checkout.status = "reversal_window_open"
-                checkout.confirmed_at = now
-                budget = db.query(UserBudget).filter(UserBudget.user_id == checkout.user_id).with_for_update().first()
-                if budget:
-                    budget.current_spent += checkout.total
-                for order in orders:
-                    order.status = OrderStatus.REVERSAL_WINDOW_OPEN
-                    order.reversal_deadline = now + timedelta(seconds=settings.APPROVAL_WINDOW_SECONDS)
-                record_order_payouts(db, orders)
-                record_audit(
+            else:
+                settle_paid_checkout(db, payment, stripe_session, actor=f"stripe:{event_id}")
+    elif event_type in {"checkout.session.expired", "checkout.session.async_payment_failed"}:
+        payment = db.query(StripeCheckoutPayment).filter(
+            StripeCheckoutPayment.stripe_session_id == stripe_object.get("id"),
+        ).with_for_update().first()
+        if payment:
+            if stripe_object.get("payment_status") == "paid":
+                settle_paid_checkout(db, payment, stripe_object, actor=f"stripe:{event_id}")
+            else:
+                mark_checkout_payment_failed(
                     db,
-                    event_type="payments.checkout_settled",
-                    endpoint="/webhooks/stripe",
-                    verdict="paid",
+                    payment,
+                    "expired" if event_type == "checkout.session.expired" else "failed",
                     actor=f"stripe:{event_id}",
                 )
-            elif checkout:
-                payment.status = "paid_review"
-                payment.payment_intent_id = stripe_session.get("payment_intent")
+    elif event_type == "payment_intent.payment_failed":
+        intent = stripe_object
+        metadata = intent.get("metadata") or {}
+        checkout_id = metadata.get("checkout_session_id")
+        payment = None
+        if checkout_id:
+            try:
+                checkout_id = int(checkout_id)
+            except (TypeError, ValueError):
+                checkout_id = None
+            if checkout_id is not None:
+                payment = db.query(StripeCheckoutPayment).filter(
+                    StripeCheckoutPayment.checkout_session_id == checkout_id,
+                ).with_for_update().first()
+        if payment is None:
+            payment = db.query(StripeCheckoutPayment).filter(
+                StripeCheckoutPayment.payment_intent_id == intent.get("id"),
+            ).with_for_update().first()
+        if payment:
+            payment.payment_intent_id = intent.get("id")
+            mark_checkout_payment_failed(db, payment, "failed", actor=f"stripe:{event_id}")
+        topup = db.get(CardTopUp, intent.get("id"))
+        if topup and topup.status != "succeeded":
+            topup.status = "failed"
+    elif event_type == "charge.refunded":
+        reconcile_charge_refund(db, stripe_object)
+    elif event_type == "refund.updated":
+        reconcile_refund_object(db, stripe_object)
     try:
         db.commit()
     except IntegrityError:

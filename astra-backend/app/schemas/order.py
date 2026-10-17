@@ -15,6 +15,8 @@ class OrderOut(BaseModel):
     status: Literal["pending_approval", "reversal_window_open", "confirmed", "shipped", "delivered", "cancelled"]
     escrow_status: Literal["HELD", "RELEASED", "REFUNDED"] = "HELD"
     seconds_left: int
+    reversal_deadline: datetime | None = None
+    reversal_window_seconds: int
     placed_at: datetime
     image: str
 

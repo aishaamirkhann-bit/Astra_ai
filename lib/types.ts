@@ -120,6 +120,8 @@ export interface OrderOut {
   status: "pending_approval" | "reversal_window_open" | "confirmed" | "shipped" | "delivered" | "cancelled";
   escrow_status: "HELD" | "RELEASED" | "REFUNDED";
   seconds_left: number;
+  reversal_deadline: string | null;
+  reversal_window_seconds: number;
   placed_at: string;
   image: string;
 }

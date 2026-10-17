@@ -87,6 +87,36 @@ def apply_sqlite_compatibility_migrations(engine: Engine) -> None:
                 connection.execute(text("ALTER TABLE orders ADD COLUMN checkout_session_id INTEGER"))
                 connection.execute(text("CREATE INDEX IF NOT EXISTS ix_orders_checkout_session_id ON orders (checkout_session_id)"))
 
+    if inspect(engine).has_table("seller_profiles"):
+        seller_profile_columns = {column["name"] for column in inspect(engine).get_columns("seller_profiles")}
+        with engine.begin() as connection:
+            if "seller_key" not in seller_profile_columns:
+                connection.execute(text("ALTER TABLE seller_profiles ADD COLUMN seller_key VARCHAR(160)"))
+            matches = connection.execute(text(
+                "SELECT sp.user_id, p.seller_id FROM seller_profiles sp "
+                "JOIN users u ON u.id = sp.user_id JOIN products p ON p.seller_name = u.name "
+                "WHERE p.seller_id IS NOT NULL AND p.seller_id != ''"
+            )).all()
+            user_keys: dict[int, set[str]] = {}
+            key_users: dict[str, set[int]] = {}
+            for user_id, seller_key in matches:
+                user_keys.setdefault(user_id, set()).add(seller_key)
+                key_users.setdefault(seller_key, set()).add(user_id)
+            for user_id, keys in user_keys.items():
+                if len(keys) == 1:
+                    seller_key = next(iter(keys))
+                    if len(key_users[seller_key]) == 1:
+                        connection.execute(text(
+                            "UPDATE seller_profiles SET seller_key = :seller_key WHERE user_id = :user_id AND seller_key IS NULL"
+                        ), {"seller_key": seller_key, "user_id": user_id})
+            connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_seller_profiles_seller_key ON seller_profiles (seller_key)"))
+
+    if inspect(engine).has_table("seller_payout_ledger"):
+        payout_columns = {column["name"] for column in inspect(engine).get_columns("seller_payout_ledger")}
+        if "transfer_attempts" not in payout_columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE seller_payout_ledger ADD COLUMN transfer_attempts INTEGER NOT NULL DEFAULT 0"))
+
     if inspect(engine).has_table("cart_items"):
         cart_columns = {column["name"] for column in inspect(engine).get_columns("cart_items")}
         if "storage" not in cart_columns:

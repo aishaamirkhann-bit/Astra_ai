@@ -31,6 +31,14 @@ def _seconds_left(order: Order) -> int:
     return max(0, int((as_aware_utc(deadline) - datetime.now(timezone.utc)).total_seconds()))
 
 
+def _reversal_window_label() -> str:
+    seconds = settings.APPROVAL_WINDOW_SECONDS
+    if seconds % 60 == 0:
+        minutes = seconds // 60
+        return f"{minutes} minute" if minutes == 1 else f"{minutes} minutes"
+    return f"{seconds} seconds"
+
+
 @router.get("/audit")
 def audit_trail(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     entries = db.query(AuditLog).order_by(AuditLog.id.desc()).limit(30).all()
@@ -53,7 +61,9 @@ def list_orders(db: Session = Depends(get_db), current_user: User = Depends(get_
     return [OrderOut(
         order_ref=order.order_ref, product_name=order.product.title,
         price=order.price, quantity=order.quantity, size=order.size, color=order.color, storage=order.storage,
-        status=order.status.value, escrow_status=order.escrow_status, seconds_left=_seconds_left(order), placed_at=order.created_at,
+        status=order.status.value, escrow_status=order.escrow_status, seconds_left=_seconds_left(order),
+        reversal_deadline=as_aware_utc(order.reversal_deadline) if order.reversal_deadline else None,
+        reversal_window_seconds=settings.APPROVAL_WINDOW_SECONDS, placed_at=order.created_at,
         image=order.product.image_url,
     ) for order in orders]
 
@@ -69,7 +79,19 @@ def order_detail(order_ref: str, db: Session = Depends(get_db), current_user: Us
         else FinancialConsentLog.reference_order_id == order.id
     )
     consent = db.query(FinancialConsentLog).filter(consent_subject, FinancialConsentLog.consumed_at.is_not(None)).first()
-    return OrderDetailOut(order_ref=order.order_ref, product_name=order.product.title, product_id=order.product_id, price=order.price, unit_price=round(order.price / order.quantity, 2), subtotal=order.price, quantity=order.quantity, size=order.size, color=order.color, storage=order.storage, status=order.status.value, escrow_status=order.escrow_status, seconds_left=_seconds_left(order), placed_at=order.created_at, image=order.product.image_url, seller_name=order.product.seller_name, seller_verified=order.product.is_verified_seller, seller_trust_score=order.product.trust, payment_method="Wallet / Consent Verified" if consent else "Wallet", consent_method=consent.auth_method if consent else None, shipped_at=order.shipped_at, delivered_at=order.delivered_at)
+    return OrderDetailOut(
+        order_ref=order.order_ref, product_name=order.product.title, product_id=order.product_id,
+        price=order.price, unit_price=round(order.price / order.quantity, 2), subtotal=order.price,
+        quantity=order.quantity, size=order.size, color=order.color, storage=order.storage,
+        status=order.status.value, escrow_status=order.escrow_status, seconds_left=_seconds_left(order),
+        reversal_deadline=as_aware_utc(order.reversal_deadline) if order.reversal_deadline else None,
+        reversal_window_seconds=settings.APPROVAL_WINDOW_SECONDS, placed_at=order.created_at,
+        image=order.product.image_url, seller_name=order.product.seller_name,
+        seller_verified=order.product.is_verified_seller, seller_trust_score=order.product.trust,
+        payment_method="Wallet / Consent Verified" if consent else "Wallet",
+        consent_method=consent.auth_method if consent else None,
+        shipped_at=order.shipped_at, delivered_at=order.delivered_at,
+    )
 
 
 @router.post("/{order_ref}/reorder", response_model=ReorderResponse)
@@ -154,7 +176,7 @@ def order_timeline(order_ref: str, db: Session = Depends(get_db), current_user: 
     reasoning = [
         {"at": placed.isoformat(), "step": "ASTRA Check", "detail": f"Seller trust {product.trust}/100, verified={product.is_verified_seller}; listing passed price-fairness band."},
         {"at": placed.isoformat(), "step": "Consent evaluation", "detail": f"{consent.auth_method} authorization for Rs. {order.price:,.0f}; single-use consent token consumed at checkout." if consent else "Consent record is unavailable for this legacy order."},
-        {"at": placed.isoformat(), "step": "Escrow policy", "detail": f"Reversible window {settings.APPROVAL_WINDOW_SECONDS}s; funds HELD until release conditions met."},
+        {"at": placed.isoformat(), "step": "Escrow policy", "detail": f"Reversible window {_reversal_window_label()}; funds HELD until release conditions met."},
     ]
     if order.escrow_status == "REFUNDED":
         reasoning.append({"at": None, "step": "Dispute engine", "detail": "Risk threshold exceeded — escrow auto-refunded with audit note."})
