@@ -29,6 +29,7 @@ Built for the **Alibaba Cloud AI Hackathon Pakistan 2026**
 - [The Solution](#the-solution)
 - [Platform at a Glance](#platform-at-a-glance)
 - [Core Features](#core-features)
+- [Product Deep Research](#product-deep-research)
 - [Why ASTRA Wins](#why-astra-wins)
 - [Tech Stack](#tech-stack)
 - [Architecture](#architecture)
@@ -116,6 +117,97 @@ ASTRA Check (rules-vs-LLM contradiction monitor) · Budget Guardrail Agent · Mu
 Seller Mode is stored in the root `AccountModeProvider`, swaps the full desktop/mobile navigation, and routes seller sessions into `/seller/dashboard`. Sign-up lets the user choose Buyer or Seller; verified Buyer sessions open `/buyer/dashboard` and Seller sessions open `/seller/dashboard`. The seller route layout checks the authenticated backend role; the API independently gates seller endpoints with `get_current_active_seller`. Seller listings and orders continue to use the canonical products/orders tables so buyer catalog and escrow records stay aligned. Seller scores, wallet ledger, and sales targets are seller-specific tables, isolated from buyer balances. The dashboard and nine workspace pages live under `/seller/*`.
 
 Barcode lookups currently use the ASTRA sample/verified catalog and return a clear manual-entry response for unknown codes. No external GTIN provider is configured. Seller payout requests are deliberately disabled until a verified payout processor and seller-settlement ledger are integrated; the seller wallet view does not present the shared buyer wallet as withdrawable money. Apply the latest backend schema with `alembic upgrade head` when using PostgreSQL.
+
+## Product Deep Research
+
+### The problem and ASTRA's solution
+
+Product research is scattered across separate product-specification pages, reviews, store listings, warranty pages, and seller-reputation searches. Buyers must gather and compare those sources themselves. ASTRA's **Product Deep Research** brings sourced product and seller findings together on the product detail page, so buyers can review one report before deciding.
+
+### How it works
+
+1. A buyer opens an ASTRA product detail page.
+2. ASTRA looks up the product by its existing product ID/slug, then runs parallel searches for official specifications, expert reviews, user complaints, prices, alternatives, warranty/after-sales information, recalls, and (when listed) seller reputation and return policies.
+3. ASTRA fetches and extracts text from a limited number of public search results. Search-result text is treated as untrusted data, not instructions.
+4. The configured Groq model synthesizes a structured report and cites only URLs returned by the search provider. Unsupported claims remain empty or `null`; insufficient seller evidence produces an `unknown` verdict.
+5. The product page presents overview, specifications, reviews, price comparison, alternatives, warranty, red flags/buying advice, and a cited seller report.
+
+### Architecture
+
+```text
+Product detail (product ID/slug)
+        │ authenticated GET /api/v1/products/{id}/research
+        ▼
+FastAPI product endpoint ── SQLAlchemy Product lookup
+        │                     └─ existing Explore catalog fallback
+        ▼
+Parallel Tavily or Brave searches ── safe, bounded public-page extraction
+        ▼
+Existing Groq chat-completions setup ── Pydantic validation and source filtering
+        ▼
+Process-local TTL cache ── cited report in the product detail UI
+```
+
+The catalog lookup is compatible with both the SQLAlchemy commerce product and the existing Explore repository; it does not merge or rewrite either catalog. Research is cached in each backend process for the configured TTL. A deployment restart or another worker may have a separate cache.
+
+### Setup
+
+Configure the backend environment in `astra-backend/.env` (see [`astra-backend/.env.example`](./astra-backend/.env.example)):
+
+```dotenv
+SEARCH_PROVIDER=tavily
+SEARCH_API_KEY=your-search-provider-key
+RESEARCH_CACHE_TTL_HOURS=24
+```
+
+`SEARCH_PROVIDER` accepts `tavily` or `brave`. Create a key in the [Tavily dashboard](https://app.tavily.com/home) or obtain a Brave Search API key from [Brave Search](https://brave.com/search/api/). Keep the key on the backend only; do not put it in a `NEXT_PUBLIC_*` variable. AI synthesis reuses ASTRA's existing `GROQ_API_KEY` (or `VISION_API_KEY`) and `GROQ_MODEL` settings. Without search or synthesis credentials, the endpoint returns an explicit partial report instead of inventing facts.
+
+### API
+
+```http
+GET /api/v1/products/samsung-galaxy-s25-ultra/research
+GET /api/v1/products/samsung-galaxy-s25-ultra/research?refresh=true
+Authorization: Bearer <ASTRA session token>
+```
+
+The endpoint also accepts a product slug as `{id}`; `refresh=true` bypasses the cached report.
+
+```json
+{
+  "overview": "Summary supported by the linked sources.",
+  "specifications": {"Display": "Value reported by a cited source"},
+  "pros": [],
+  "cons": [],
+  "review_summary": {"overall_sentiment": null, "common_complaints": []},
+  "price_comparison": [],
+  "alternatives": [],
+  "warranty_support": null,
+  "red_flags": [],
+  "buying_advice": null,
+  "seller_report": {
+    "name": "TechBazaar Official",
+    "rating": null,
+    "reputation_signals": [],
+    "complaints_or_scam_reports": [],
+    "return_policy": null,
+    "verdict": "unknown"
+  },
+  "sources": [{"title": "Example source", "url": "https://example.com/review"}],
+  "evidence": {"overview": ["https://example.com/review"]},
+  "confidence": "low",
+  "generated_at": "2026-10-20T12:00:00Z",
+  "status": "partial",
+  "message": "Some research could not be completed."
+}
+```
+
+### Limitations
+
+- Results depend on public pages indexed by the selected search provider; private, login-only, or blocked pages may not be available.
+- Report accuracy and coverage depend on the linked sources. Check those sources before relying on a price, product specification, warranty, recall, or review summary.
+- Seller names can be ambiguous, and online evidence can be sparse. ASTRA leaves the verdict `unknown` rather than inferring a seller's reputation.
+- The existing Groq key is needed for synthesis. If a provider fails, ASTRA returns a partial response with a clear message and does not substitute guesses.
+- Research results are informational, not a guarantee of product authenticity, seller trustworthiness, price availability, or warranty coverage.
 
 ## Why ASTRA Wins
 
