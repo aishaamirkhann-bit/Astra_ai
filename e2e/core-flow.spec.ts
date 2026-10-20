@@ -15,7 +15,7 @@ async function loginViaUi(page: Page) {
   const digits = page.locator('input[inputmode="numeric"]');
   for (const [index, digit] of [..."123456"].entries()) await digits.nth(index).fill(digit);
   await page.getByRole("button", { name: /verify & continue/i }).click();
-  await expect(page).toHaveURL(/localhost:3000\/$/);
+  await expect(page).toHaveURL(/localhost:3000\/buyer\/dashboard$/);
 }
 
 test.describe("ASTRA core browser flows", () => {

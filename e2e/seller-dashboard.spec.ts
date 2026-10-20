@@ -36,7 +36,7 @@ test("switches account mode and prefills seller listing from barcode", async ({ 
 
   await profileMenu.click();
   await page.getByRole("radio", { name: "Switch to Buyer Mode" }).click();
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/buyer\/dashboard$/);
   await expect(page.getByText("Switched to Buyer Mode")).toBeVisible();
   await expect(page.getByRole("link", { name: "Seller Dashboard" })).toHaveCount(0);
   await page.goto("/seller/dashboard");

@@ -94,11 +94,17 @@ Every listing carries a Groth16/BN254 ZK verification, a 32-hex seller reputatio
 ### 🛡️ Deepfake Guardrail
 An AI Synthetic Image Scan (AstraGuard-ViT-L/14) reports a manipulation-probability score and verdict on every listing image.
 
+### 🔎 Product & Seller Trust Analysis
+ASTRA evaluates product and seller signals together to support safer buying: listing fingerprints and seller verification, buyer ratings and review sentiment, price stability from market-history observations, and seller fulfillment metrics. These checks contribute to an explainable risk band and trust indicators in the product authenticity audit. The checks are decision support, not a guarantee of authenticity.
+
 ### 📈 Predictive Restock Guardian
 Per-product purchase-interval modeling predicts the next likely purchase date, urgency, confidence, and estimated next price.
 
-### 🌍 Cross-Border Micro-Escrow
-A deterministic, zero-fee, three-hop settlement corridor (PKR → corridor currency → USD → PKR) with live per-hop rate/latency.
+### 🎯 Goal-Based Shopping & Booking
+Set a product, category, target price, priority, and deadline; add wallet funds toward the goal; and ASTRA matches active goals with trust-scored deals that fit the target. The budget agent highlights savings, checks the monthly spending limit, and can suggest installments when a deal exceeds the remaining safe budget. Buyers can reserve an eligible deal through the regular consent-protected checkout when ready.
+
+### 🌍 International Currency Wallet & Cross-Border Micro-Escrow
+The wallet shows a zero-fee, three-hop PKR → corridor currency (AED, SAR, or USD) → USD → PKR settlement route, including each hop's estimated rate, amount, slippage, and latency. This is a deterministic demo simulation using configured rates; it is not a live FX quote or an external cross-border payment service.
 
 ### 🗣️ Multilingual, Code-Switched Understanding
 Roman Urdu, Punjabi, and English are understood interchangeably across search, voice intent, and negotiation — ASTRA's core differentiator for PKR-denominated, code-switching markets.

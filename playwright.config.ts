@@ -46,6 +46,7 @@ export default defineConfig({
       env: {
         ...process.env,
         APP_ENV: "development",
+        EMAIL_PROVIDER: "console",
         OTP_DEBUG_LOG: "true",
         RESEND_API_KEY: "",
         SMTP_HOST: "",
