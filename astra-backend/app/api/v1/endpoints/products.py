@@ -6,8 +6,11 @@ from app.models.deal import MarketPriceHistory, SellerMetric
 from app.models.product import Product
 from app.models.user import User
 from app.schemas.product import BuyerReviewOut, ProductDetailOut, ProductOut
+from app.schemas.product_research import ProductResearchInput, ProductResearchOut
+from app.repository import product_repository
 from app.services.astra_agents import authenticity_extras
 from app.services.finance_engine import FinanceEngine
+from app.services.product_research import research_product
 from app.services.recommendation_engine import RecommendationEngine
 from app.utils.helpers import format_pkr
 
@@ -42,6 +45,41 @@ def get_recommended_products(
     products = RecommendationEngine.get_recommended(db, limit=limit)
     wallet = current_user.wallet
     return [_to_product_out(p, wallet) for p in products]
+
+
+@router.get("/{product_id}/research", response_model=ProductResearchOut)
+async def get_product_research(
+    product_id: str,
+    refresh: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ProductResearchOut:
+    product = db.query(Product).filter(
+        Product.id == product_id,
+        Product.listing_status == "active",
+    ).first()
+    if product:
+        research_input = ProductResearchInput(
+            id=product.id,
+            slug=product.slug,
+            name=product.title,
+            brand=product.brand or None,
+            category=product.category,
+            seller_name=product.seller_name or None,
+        )
+    else:
+        catalog_product = product_repository.get_product(product_id)
+        if not catalog_product:
+            raise HTTPException(status_code=404, detail="Product not found")
+        research_input = ProductResearchInput(
+            id=catalog_product["id"],
+            slug=catalog_product["id"],
+            name=catalog_product["title"],
+            brand=None,
+            category=catalog_product["category"],
+            seller_name=catalog_product.get("seller_name") or None,
+        )
+    return await research_product(research_input, refresh=refresh)
 
 
 @router.get("/{slug}", response_model=ProductDetailOut)
