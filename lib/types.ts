@@ -36,6 +36,37 @@ export interface ProductDetail extends Product {
   reviews: Array<{ id: string; buyer: string; rating: number; comment: string; verified: boolean }>;
 }
 
+export interface ProductResearchSource { title: string; url: string; }
+export interface ProductResearchPrice { store: string; price: number | null; currency: string | null; url: string; fetched_at: string | null; }
+export interface ProductResearchAlternative { name: string; why: string | null; approx_price: string | null; }
+export interface ProductResearchSeller {
+  name: string | null;
+  rating: number | null;
+  reputation_signals: string[];
+  complaints_or_scam_reports: string[];
+  return_policy: string | null;
+  verdict: "trustworthy" | "caution" | "unknown";
+}
+export interface ProductResearch {
+  overview: string | null;
+  specifications: Record<string, string>;
+  pros: string[];
+  cons: string[];
+  review_summary: { overall_sentiment: string | null; common_complaints: string[] };
+  price_comparison: ProductResearchPrice[];
+  alternatives: ProductResearchAlternative[];
+  warranty_support: string | null;
+  red_flags: string[];
+  buying_advice: string | null;
+  seller_report: ProductResearchSeller;
+  sources: ProductResearchSource[];
+  evidence: Record<string, string[]>;
+  confidence: "low" | "medium" | "high";
+  generated_at: string;
+  status: "complete" | "partial";
+  message: string | null;
+}
+
 export interface CartItem { id: number; product_slug: string; name: string; quantity: number; size: string; color: string; storage: string; unit_price: number; image: string; seller_name: string; seller_verified: boolean; stock_count: number; }
 export interface Cart { items: CartItem[]; total_quantity: number; subtotal: number; monthly_budget_limit: number; current_spent: number; exceeds_budget: boolean; shipping_address: string; }
 export interface CartCheckout { checkout_ref: string; order_refs: string[]; total: number; status: string; }

@@ -37,6 +37,7 @@ import type {
   VoiceIntentResult,
   TranscribeResponse,
   SearchResponse,
+  ProductResearch,
   MicroSettlements,
   RemittanceContext,
   SwarmTrace,
@@ -261,6 +262,10 @@ export function addToCart(
 }
 
 export function getProduct(slug: string, cookieHeader?: string): Promise<ProductDetail> { return apiFetch<ProductDetail>(`/products/${slug}`, undefined, cookieHeader); }
+export function getProductResearch(productId: string, refresh = false): Promise<ProductResearch> {
+  const query = refresh ? "?refresh=true" : "";
+  return apiFetch<ProductResearch>(`/products/${encodeURIComponent(productId)}/research${query}`);
+}
 export function getCart(cookieHeader?: string): Promise<Cart> { return apiFetch<Cart>("/cart", undefined, cookieHeader); }
 export function updateCartItem(itemId: number, quantity: number): Promise<Cart> { return apiFetch<Cart>(`/cart/${itemId}`, { method: "PUT", body: JSON.stringify({ quantity }) }); }
 export function removeCartItem(itemId: number): Promise<Cart> { return apiFetch<Cart>(`/cart/${itemId}`, { method: "DELETE" }); }
