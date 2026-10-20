@@ -26,11 +26,12 @@ class SensitiveEndpointRateLimitMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         limit = self._limit_for(request.url.path)
-        if request.method == "POST" and limit:
+        if limit and (request.method == "POST" or request.url.path.endswith("/research")):
             # Uvicorn resolves trusted proxy headers into request.client; never
             # trust a directly supplied X-Forwarded-For value here.
             client = request.client.host if request.client else "unknown"
-            key = f"{client}:{request.url.path}"
+            path_key = "product-research" if request.url.path.endswith("/research") else request.url.path
+            key = f"{client}:{path_key}"
             now = monotonic()
             async with self._lock:
                 bucket = self._requests[key]
@@ -44,6 +45,8 @@ class SensitiveEndpointRateLimitMiddleware(BaseHTTPMiddleware):
 
     @staticmethod
     def _limit_for(path: str) -> int:
+        if path.endswith("/research"):
+            return settings.RESEARCH_RATE_LIMIT
         if path.endswith("/wallet/authorize-consent"):
             return settings.CONSENT_RATE_LIMIT
         if path.endswith(("/auth/verify-otp", "/auth/resend-otp", "/auth/login", "/auth/forgot-password", "/auth/reset-password")):

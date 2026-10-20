@@ -47,6 +47,13 @@ class Settings(BaseSettings):
     PRODUCT_PROVIDER_TIMEOUT_SECONDS: float = 5.0
     REFRESH_PRODUCTS_ON_STARTUP: bool = False
 
+    # --- Product deep research ---
+    SEARCH_PROVIDER: str = "tavily"
+    SEARCH_API_KEY: str = ""
+    RESEARCH_CACHE_TTL_HOURS: int = 24
+    RESEARCH_RATE_LIMIT: int = 10
+    RESEARCH_TIMEOUT_SECONDS: float = 8.0
+
     # --- Card payments (Stripe). Empty keys = wallet-only rails. ---
     STRIPE_SECRET_KEY: str = ""
     STRIPE_PUBLISHABLE_KEY: str = ""
