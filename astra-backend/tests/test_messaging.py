@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.core.database import SessionLocal
 from app.main import app
+from app.core.config import settings
 from app.models.messaging import DirectMessage, SellerConversation
 
 PRODUCT_ID = "samsung-galaxy-s25-ultra"
@@ -91,16 +92,18 @@ def test_websocket_exchange_is_realtime_and_persisted() -> None:
     seller = _session("seller@astra.ai")
     buyer_token = buyer.headers["Authorization"].removeprefix("Bearer ")
     seller_token = seller.headers["Authorization"].removeprefix("Bearer ")
+    buyer.cookies.set(settings.AUTH_COOKIE_NAME, buyer_token)
+    seller.cookies.set(settings.AUTH_COOKIE_NAME, seller_token)
     conversation_id = buyer.post("/api/v1/messaging/conversations", json={"product_id": PRODUCT_ID}).json()["id"]
 
-    with seller.websocket_connect(f"/ws/messages/{conversation_id}?token={seller_token}") as seller_ws:
+    with seller.websocket_connect(f"/ws/messages/{conversation_id}") as seller_ws:
         assert seller_ws.receive_json()["type"] == "connected"
         buyer.post(f"/api/v1/messaging/conversations/{conversation_id}/messages", json={"content": "WS ping from buyer"})
         event = seller_ws.receive_json()
         assert event["type"] == "message"
         assert event["content"] == "WS ping from buyer"
 
-        with buyer.websocket_connect(f"/ws/messages/{conversation_id}?token={buyer_token}") as buyer_ws:
+        with buyer.websocket_connect(f"/ws/messages/{conversation_id}") as buyer_ws:
             assert buyer_ws.receive_json()["type"] == "connected"
             seller_ws.send_json({"content": "WS reply from seller"})
             event = buyer_ws.receive_json()
@@ -117,10 +120,11 @@ def test_websocket_exchange_is_realtime_and_persisted() -> None:
 def test_websocket_requires_participant_token(anonymous_client) -> None:
     buyer = _session("aisha@astra.ai")
     conversation_id = buyer.post("/api/v1/messaging/conversations", json={"product_id": PRODUCT_ID}).json()["id"]
+    buyer_token = buyer.headers["Authorization"].removeprefix("Bearer ")
     connected = False
     try:
-        with anonymous_client.websocket_connect(f"/ws/messages/{conversation_id}"):
+        with anonymous_client.websocket_connect(f"/ws/messages/{conversation_id}?token={buyer_token}"):
             connected = True
     except Exception:
         pass
-    assert connected is False, "WebSocket without a token should be rejected"
+    assert connected is False, "WebSocket query-string tokens must be rejected"

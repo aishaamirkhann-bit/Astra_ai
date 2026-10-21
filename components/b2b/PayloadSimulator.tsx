@@ -144,7 +144,7 @@ export default function PayloadSimulator() {
             Live verdict
           </p>
           {!evaluation && !running && !error && (
-            <p className="text-[11px] text-ink-700">Run a simulation to see the adapter's response.</p>
+            <p className="text-[11px] text-ink-700">Run a simulation to see the adapter&apos;s response.</p>
           )}
           {running && <p className="text-[11px] text-ink-500">Evaluating against rules engine…</p>}
           {error && <p className="text-[11px] text-signal-reject">{error}</p>}

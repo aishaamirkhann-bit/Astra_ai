@@ -84,6 +84,7 @@ def bootstrap_deals_data(db: Session) -> None:
         product = db.get(Product, item["id"])
         values = {
             "title": item["title"], "category": item["category"], "base_price": item["price"],
+            "origin_country": item.get("origin_country", "PK"),
             "rating": item["rating"], "total_reviews": item["total_reviews"],
             "seller_name": item["seller_name"], "seller_id": seller_id,
             "is_verified_seller": item["is_verified_seller"], "badge": item["badge"],

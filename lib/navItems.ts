@@ -18,6 +18,7 @@ import {
 export const BUYER_NAV_ITEMS = [
   { label: "Home", href: "/", icon: Home },
   { label: "Explore", href: "/explore", icon: Compass },
+  { label: "Wholesale Bids", href: "/b2b", icon: Store },
   { label: "Categories", href: "/categories", icon: LayoutGrid },
   { label: "Deals", href: "/deals", icon: Tag },
   { label: "ASTRA Check", href: "/astra-check", icon: ShieldCheck },
@@ -31,6 +32,8 @@ export const BUYER_NAV_ITEMS = [
 export const SELLER_NAV_ITEMS = [
   { label: "Dashboard", href: "/seller/dashboard", icon: Home },
   { label: "My Inventory", href: "/seller/inventory", icon: Boxes },
+  { label: "B2B Supplier Desk", href: "/seller/b2b", icon: Store },
+  { label: "Vendor Plans", href: "/pricing", icon: Tag },
   { label: "Products", href: "/seller/products", icon: Package },
   { label: "Orders", href: "/seller/orders", icon: ClipboardList },
   { label: "ASTRA Check", href: "/seller/astra-check", icon: ShieldCheck },

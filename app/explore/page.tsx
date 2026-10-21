@@ -7,9 +7,10 @@ import { getExploreData } from "@/lib/api";
 export default async function ExplorePage({
   searchParams,
 }: {
-  searchParams: { q?: string; category?: string };
+  searchParams: Promise<{ q?: string; category?: string }>;
 }) {
-  const cookieHeader = cookies().getAll().map(({ name, value }) => `${name}=${value}`).join("; ");
+  const [query, cookieStore] = await Promise.all([searchParams, cookies()]);
+  const cookieHeader = cookieStore.getAll().map(({ name, value }) => `${name}=${value}`).join("; ");
   let exploreData;
   try {
     exploreData = await getExploreData(cookieHeader);
@@ -23,8 +24,8 @@ export default async function ExplorePage({
       subtitle="Search by text, voice, or image — ASTRA blends keyword and semantic matching."
     >
       <ExploreClient
-        initialQuery={searchParams.q?.replace(/\+/g, " ") ?? ""}
-        initialCategory={searchParams.category ?? null}
+        initialQuery={query.q?.replace(/\+/g, " ") ?? ""}
+        initialCategory={query.category ?? null}
         initialWalletBalance={exploreData.available_balance}
       />
     </PageShell>

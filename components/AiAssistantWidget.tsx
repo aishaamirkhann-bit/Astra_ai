@@ -5,6 +5,8 @@ import { Sparkles, Star, ShieldCheck, ShoppingCart, X, Check } from "lucide-reac
 import { useEffect, useState } from "react";
 import type { AiAssistantSuggestion } from "@/lib/types";
 import { addToCart } from "@/lib/api";
+import CatalogProductImage from "@/components/CatalogProductImage";
+import CrossBorderShippingBadge from "@/components/CrossBorderShippingBadge";
 
 export default function AiAssistantWidget({ suggestion }: { suggestion: AiAssistantSuggestion }) {
   const [open, setOpen] = useState(true);
@@ -45,10 +47,10 @@ export default function AiAssistantWidget({ suggestion }: { suggestion: AiAssist
       </p>
 
       <Link href={`/product/${product.slug}`} className="flex gap-3">
-        <div
-          className="photo-frame h-16 w-16 shrink-0 rounded-lg"
-          style={{ backgroundImage: `url(${product.image})` }}
-        />
+        <div className="photo-frame relative h-16 w-16 shrink-0 overflow-hidden rounded-lg">
+          <CatalogProductImage src={product.image} title={product.name} category={product.category} className="h-full w-full object-cover" />
+          <CrossBorderShippingBadge originCountry={product.origin_country} />
+        </div>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-ink-100">{product.name}</p>
           <div className="mt-0.5 flex items-center gap-1 text-[11px] text-ink-500">

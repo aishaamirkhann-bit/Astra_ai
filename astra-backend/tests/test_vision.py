@@ -26,7 +26,7 @@ def _configure_groq(monkeypatch) -> None:
     monkeypatch.setattr(vision.settings, "VISION_MODEL", "test/vision-model")
 
 
-def test_chat_vision_posts_image_and_prompt_to_groq(monkeypatch) -> None:
+def test_chat_vision_posts_image_and_prompt_to_groq(monkeypatch, valid_png_bytes: bytes) -> None:
     _configure_groq(monkeypatch)
     requests = []
 
@@ -38,7 +38,7 @@ def test_chat_vision_posts_image_and_prompt_to_groq(monkeypatch) -> None:
 
     monkeypatch.setattr(vision.urllib.request, "urlopen", fake_urlopen)
     result = vision.describe_image_for_chat(
-        b"sample-image",
+        valid_png_bytes,
         "image/png",
         "How can I style this room?",
     )
@@ -55,7 +55,7 @@ def test_chat_vision_posts_image_and_prompt_to_groq(monkeypatch) -> None:
     assert "How can I style this room?" in content[0]["text"]
     image_url = content[1]["image_url"]["url"]
     assert image_url.startswith("data:image/png;base64,")
-    assert base64.b64decode(image_url.split(",", maxsplit=1)[1]) == b"sample-image"
+    assert base64.b64decode(image_url.split(",", maxsplit=1)[1]) == valid_png_bytes
 
 
 def test_chat_vision_returns_not_configured_without_provider_or_key(monkeypatch) -> None:
@@ -74,7 +74,7 @@ def test_chat_vision_returns_not_configured_without_provider_or_key(monkeypatch)
     assert result.answer is None
 
 
-def test_chat_vision_uses_groq_key_when_dedicated_vision_key_is_missing(monkeypatch) -> None:
+def test_chat_vision_uses_groq_key_when_dedicated_vision_key_is_missing(monkeypatch, valid_png_bytes: bytes) -> None:
     monkeypatch.setattr(vision.settings, "VISION_PROVIDER", "")
     monkeypatch.setattr(vision.settings, "VISION_API_KEY", "")
     monkeypatch.setattr(vision.settings, "GROQ_API_KEY", "test-groq-key")
@@ -88,13 +88,13 @@ def test_chat_vision_uses_groq_key_when_dedicated_vision_key_is_missing(monkeypa
         })
 
     monkeypatch.setattr(vision.urllib.request, "urlopen", fake_urlopen)
-    result = vision.describe_image_for_chat(b"sample-image", "image/jpeg", "Describe this.")
+    result = vision.describe_image_for_chat(valid_png_bytes, "image/png", "Describe this.")
 
     assert result.status == "analyzed"
     assert requests[0].get_header("Authorization") == "Bearer test-groq-key"
 
 
-def test_dedicated_vision_key_takes_precedence_over_general_groq_key(monkeypatch) -> None:
+def test_dedicated_vision_key_takes_precedence_over_general_groq_key(monkeypatch, valid_png_bytes: bytes) -> None:
     _configure_groq(monkeypatch)
     monkeypatch.setattr(vision.settings, "GROQ_API_KEY", "fallback-groq-key")
     requests = []
@@ -107,12 +107,12 @@ def test_dedicated_vision_key_takes_precedence_over_general_groq_key(monkeypatch
         })
 
     monkeypatch.setattr(vision.urllib.request, "urlopen", fake_urlopen)
-    vision.describe_image_for_chat(b"sample-image", "image/jpeg", "Describe this.")
+    vision.describe_image_for_chat(valid_png_bytes, "image/png", "Describe this.")
 
     assert requests[0].get_header("Authorization") == "Bearer test-vision-key"
 
 
-def test_chat_vision_returns_provider_error_on_http_failure(monkeypatch) -> None:
+def test_chat_vision_returns_provider_error_on_http_failure(monkeypatch, valid_png_bytes: bytes) -> None:
     _configure_groq(monkeypatch)
 
     def failed_request(request, *, timeout: float):
@@ -127,13 +127,13 @@ def test_chat_vision_returns_provider_error_on_http_failure(monkeypatch) -> None
         )
 
     monkeypatch.setattr(vision.urllib.request, "urlopen", failed_request)
-    result = vision.describe_image_for_chat(b"sample-image", "image/jpeg", "")
+    result = vision.describe_image_for_chat(valid_png_bytes, "image/png", "")
 
     assert result.status == "provider_error"
     assert result.answer is None
 
 
-def test_chat_vision_returns_provider_error_for_malformed_response(monkeypatch) -> None:
+def test_chat_vision_returns_provider_error_for_malformed_response(monkeypatch, valid_png_bytes: bytes) -> None:
     _configure_groq(monkeypatch)
 
     def malformed_response(request, *, timeout: float):
@@ -147,20 +147,20 @@ def test_chat_vision_returns_provider_error_for_malformed_response(monkeypatch) 
         malformed_response,
     )
 
-    result = vision.describe_image_for_chat(b"sample-image", "image/jpeg", "")
+    result = vision.describe_image_for_chat(valid_png_bytes, "image/png", "")
 
     assert result.status == "provider_error"
     assert result.answer is None
 
 
-def test_explore_vision_uses_shared_groq_request_and_returns_labels(monkeypatch) -> None:
+def test_explore_vision_uses_shared_groq_request_and_returns_labels(monkeypatch, valid_png_bytes: bytes) -> None:
     _configure_groq(monkeypatch)
 
     def successful_response(request, *, timeout: float):
         assert request.full_url == vision.GROQ_CHAT_URL
         assert timeout > 0
         return _FakeResponse({
-            "choices": [{"message": {"content": "wireless earbuds"}}],
+            "choices": [{"message": {"content": '{"category":"","color":"","style":"","pattern":"","keywords":["wireless","earbuds"]}'}}],
         })
 
     monkeypatch.setattr(
@@ -169,7 +169,7 @@ def test_explore_vision_uses_shared_groq_request_and_returns_labels(monkeypatch)
         successful_response,
     )
 
-    result = vision.analyze_image(b"sample-image", "product.webp")
+    result = vision.analyze_image(valid_png_bytes, "product.png")
 
     assert result is not None
     assert result.query == "wireless earbuds"

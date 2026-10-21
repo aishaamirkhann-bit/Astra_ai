@@ -1,5 +1,8 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+import hashlib
+import json
 from uuid import uuid4
 
 from fastapi import HTTPException, status
@@ -11,6 +14,7 @@ from app.models.cart import CartItem
 from app.models.checkout import CheckoutSession
 from app.models.deal import Deal, DealAuditLog, DealReservation
 from app.models.order import Order, OrderStatus
+from app.models.negotiation import NegotiationSession
 from app.models.product import Product
 from app.models.user import User
 from app.models.wallet import FinancialConsentLog, UserWallet, WalletTransaction
@@ -43,6 +47,57 @@ def _order_ref() -> str:
 
 def _checkout_ref() -> str:
     return f"CHK-{uuid4().hex[:16].upper()}"
+
+
+def _money(value: float | int | str) -> Decimal:
+    try:
+        amount = Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    except (InvalidOperation, ValueError):
+        raise HTTPException(status_code=409, detail="Invalid authoritative monetary amount")
+    if not amount.is_finite() or amount <= 0:
+        raise HTTPException(status_code=409, detail="Invalid authoritative monetary amount")
+    return amount
+
+
+def checkout_snapshot_hash(session: CheckoutSession, orders: list[Order]) -> str:
+    snapshot = {
+        "user_id": session.user_id,
+        "checkout_ref": session.checkout_ref,
+        "shipping_address": session.shipping_address,
+        "total": str(_money(session.total)),
+        "orders": [
+            {"order_ref": order.order_ref, "product_id": order.product_id,
+             "product_title": order.product.title, "seller_id": order.product.seller_id,
+             "listing_status": order.product.listing_status,
+             "quantity": order.quantity, "price": str(_money(order.price)),
+             "size": order.size, "color": order.color, "storage": order.storage,
+             "negotiation_session_id": order.negotiation_session_id}
+            for order in sorted(orders, key=lambda item: item.id)
+        ],
+    }
+    encoded = json.dumps(snapshot, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def order_snapshot_hash(order: Order) -> str:
+    product = order.product
+    snapshot = {
+        "user_id": order.user_id, "order_ref": order.order_ref,
+        "product_id": order.product_id, "product_price": str(_money(product.price)),
+        "product_title": product.title, "seller_id": product.seller_id,
+        "listing_status": product.listing_status,
+        "quantity": order.quantity, "price": str(_money(order.price)),
+        "size": order.size, "color": order.color, "storage": order.storage,
+    }
+    encoded = json.dumps(snapshot, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _ensure_budget_capacity(db: Session, user_id: int, amount: float) -> UserBudget | None:
+    budget = db.query(UserBudget).filter(UserBudget.user_id == user_id).with_for_update().first()
+    if budget and budget.current_spent + amount > budget.monthly_limit + budget.rollover_savings + 0.01:
+        raise HTTPException(status_code=409, detail="MONTHLY_BUDGET_EXCEEDED")
+    return budget
 
 
 def _orders_for_session(db: Session, session: CheckoutSession) -> list[Order]:
@@ -131,6 +186,9 @@ def _release_session_reservation(db: Session, session: CheckoutSession, target_s
         product = db.query(Product).filter(Product.id == order.product_id).with_for_update().first()
         if product:
             product.stock_count += order.quantity
+            deal = db.query(Deal).filter(Deal.product_id == product.id).with_for_update().first()
+            if deal:
+                deal.stock_remaining = product.stock_count
         _transition(order, OrderStatus.CANCELLED)
     _restore_cart_items(db, session.user_id, orders)
     session.status = target_status
@@ -159,7 +217,17 @@ def create_or_reuse_checkout_session(db: Session, user: User, shipping_address: 
     active = get_active_checkout_session(db, locked_user, lock=True)
     if active:
         if as_aware_utc(active.expires_at) > _now():
-            active.shipping_address = shipping_address
+            if db.query(Order.id).filter(
+                Order.checkout_session_id == active.id,
+                Order.negotiation_session_id.is_not(None),
+            ).first():
+                raise HTTPException(status_code=409, detail="Use the approved negotiation session for this checkout")
+            if active.shipping_address != shipping_address:
+                db.query(FinancialConsentLog).filter(
+                    FinancialConsentLog.reference_checkout_id == active.id,
+                    FinancialConsentLog.consumed_at.is_(None),
+                ).update({FinancialConsentLog.status: "Rejected"}, synchronize_session=False)
+                active.shipping_address = shipping_address
             return active
         _release_session_reservation(db, active, EXPIRED)
 
@@ -193,7 +261,13 @@ def create_or_reuse_checkout_session(db: Session, user: User, shipping_address: 
         product = products[product_id]
         if product.stock_count < requested_quantity:
             raise HTTPException(status_code=409, detail=f"Insufficient stock for {product.title}")
-    total = sum(products[item.product_id].price * item.quantity for item in items)
+    if any(item.quantity <= 0 for item in items):
+        raise HTTPException(status_code=409, detail="Cart contains an invalid quantity")
+    if any(products[item.product_id].listing_status != "active" for item in items):
+        raise HTTPException(status_code=409, detail="A cart product is no longer available")
+    total_decimal = sum((_money(products[item.product_id].price) * item.quantity for item in items), Decimal("0.00"))
+    total = float(total_decimal.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+    _ensure_budget_capacity(db, locked_user.id, total)
 
     session = CheckoutSession(
         checkout_ref=_checkout_ref(),
@@ -209,6 +283,9 @@ def create_or_reuse_checkout_session(db: Session, user: User, shipping_address: 
     for item in items:
         product = products[item.product_id]
         product.stock_count -= item.quantity
+        deal = db.query(Deal).filter(Deal.product_id == product.id).with_for_update().first()
+        if deal:
+            deal.stock_remaining = product.stock_count
         db.add(
             Order(
                 order_ref=_order_ref(),
@@ -218,7 +295,7 @@ def create_or_reuse_checkout_session(db: Session, user: User, shipping_address: 
                 size=item.size,
                 color=item.color,
                 storage=item.storage,
-                price=round(product.price * item.quantity, 2),
+                price=float((_money(product.price) * item.quantity).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)),
                 checkout_session_id=session.id,
                 status=OrderStatus.PENDING_APPROVAL,
                 approval_deadline=session.expires_at,
@@ -234,6 +311,66 @@ def create_or_reuse_checkout_session(db: Session, user: User, shipping_address: 
     )
     db.flush()
     return session
+
+
+def create_negotiated_checkout_session(
+    db: Session, user: User, shipping_address: str, negotiation_session_id: int,
+) -> CheckoutSession:
+    locked_user = db.query(User).filter(User.id == user.id).with_for_update().one()
+    if get_active_checkout_session(db, locked_user, lock=True):
+        raise HTTPException(status_code=409, detail="Another checkout session is already active")
+    negotiation = db.query(NegotiationSession).filter(
+        NegotiationSession.id == negotiation_session_id,
+        NegotiationSession.user_id == locked_user.id,
+    ).with_for_update().first()
+    if not negotiation:
+        raise HTTPException(status_code=404, detail="Negotiation session not found")
+    if negotiation.status != "buyer_approved" or not negotiation.buyer_approved_at:
+        raise HTTPException(status_code=409, detail="Buyer approval is required for this negotiated offer")
+    if not negotiation.expires_at or as_aware_utc(negotiation.expires_at) <= _now():
+        negotiation.status = "expired"
+        db.flush()
+        raise HTTPException(status_code=410, detail="Negotiation offer expired; negotiate again")
+    product = db.query(Product).filter(Product.id == negotiation.product_id).with_for_update().first()
+    if (
+        not product
+        or product.listing_status != "active"
+        or product.seller_id != negotiation.seller_id
+        or negotiation.quantity <= 0
+        or negotiation.quantity > product.stock_count
+        or negotiation.final_price is None
+        or _money(negotiation.final_price) > _money(product.price)
+    ):
+        raise HTTPException(status_code=409, detail="Negotiated offer details are no longer valid")
+    total = float((_money(negotiation.final_price) * negotiation.quantity).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+    _ensure_budget_capacity(db, locked_user.id, total)
+    checkout = CheckoutSession(
+        checkout_ref=_checkout_ref(), user_id=locked_user.id, total=total,
+        shipping_address=shipping_address, status=AWAITING_CONSENT,
+        expires_at=_now() + timedelta(seconds=settings.CHECKOUT_SESSION_TTL_SECONDS),
+    )
+    db.add(checkout)
+    db.flush()
+    product.stock_count -= negotiation.quantity
+    deal = db.query(Deal).filter(Deal.product_id == product.id).with_for_update().first()
+    if deal:
+        deal.stock_remaining = product.stock_count
+    order = Order(
+        order_ref=_order_ref(), user_id=locked_user.id, product_id=product.id,
+        quantity=negotiation.quantity, size=negotiation.size, color=negotiation.color,
+        storage=negotiation.storage, price=total, checkout_session_id=checkout.id,
+        negotiation_session_id=negotiation.id, status=OrderStatus.PENDING_APPROVAL,
+        approval_deadline=checkout.expires_at,
+    )
+    db.add(order)
+    negotiation.status = "checkout_pending"
+    negotiation.checkout_session_id = checkout.id
+    record_audit(
+        db, event_type="checkout.negotiated_session_created", endpoint="/api/v1/checkout/session",
+        verdict="awaiting_consent", actor=f"user:{locked_user.email}",
+    )
+    db.flush()
+    return checkout
 
 
 def abandon_checkout_session(db: Session, session: CheckoutSession, actor: str) -> bool:
@@ -271,12 +408,13 @@ def _require_consent(
             FinancialConsentLog.user_id == user.id,
             FinancialConsentLog.status == "Approved",
             FinancialConsentLog.consumed_at.is_(None),
+            FinancialConsentLog.expires_at > _now(),
         )
         .with_for_update()
         .first()
     )
     subject_ref = order.order_ref if order else checkout.checkout_ref
-    if not consent or abs(consent.amount - amount) > 0.01:
+    if not consent or _money(consent.amount) != _money(amount):
         raise HTTPException(
             status_code=status.HTTP_428_PRECONDITION_REQUIRED,
             detail=f"FINANCIAL_CONSENT_REQUIRED:{subject_ref}",
@@ -289,10 +427,38 @@ def _require_consent(
 
 
 def _validate_session_snapshot(db: Session, session: CheckoutSession, orders: list[Order]) -> None:
-    changed = False
+    changed = not orders or any(order.quantity <= 0 for order in orders)
+    try:
+        order_total = sum((_money(order.price) for order in orders), Decimal("0.00"))
+        changed = changed or order_total != _money(session.total)
+    except HTTPException:
+        changed = True
     for order in orders:
         product = db.query(Product).filter(Product.id == order.product_id).with_for_update().first()
-        if not product or abs(product.price * order.quantity - order.price) > 0.01:
+        try:
+            if order.negotiation_session_id:
+                negotiation = db.query(NegotiationSession).filter(
+                    NegotiationSession.id == order.negotiation_session_id,
+                    NegotiationSession.checkout_session_id == session.id,
+                    NegotiationSession.user_id == session.user_id,
+                ).with_for_update().first()
+                invalid_price = (
+                    not negotiation
+                    or negotiation.status != "checkout_pending"
+                    or not negotiation.buyer_approved_at
+                    or negotiation.product_id != order.product_id
+                    or negotiation.seller_id != (product.seller_id if product else None)
+                    or negotiation.quantity != order.quantity
+                    or negotiation.final_price is None
+                    or not product
+                    or _money(negotiation.final_price) > _money(product.price)
+                    or _money(negotiation.final_price) * order.quantity != _money(order.price)
+                )
+            else:
+                invalid_price = not product or _money(product.price) * order.quantity != _money(order.price)
+        except HTTPException:
+            invalid_price = True
+        if invalid_price or product.listing_status != "active":
             changed = True
             break
     if changed:
@@ -331,10 +497,14 @@ def confirm_checkout_session(
         raise HTTPException(status_code=409, detail="Checkout session orders are not awaiting approval")
     _validate_session_snapshot(db, session, orders)
     consent = _require_consent(db, locked_user, session.total, consent_id, checkout=session)
+    if not consent.order_snapshot_hash or consent.order_snapshot_hash != checkout_snapshot_hash(session, orders):
+        raise HTTPException(status_code=409, detail="CHECKOUT_DETAILS_CHANGED: review the order and authorize again")
     wallet = db.query(UserWallet).filter(UserWallet.user_id == locked_user.id).with_for_update().one()
+    if wallet.currency != "PKR":
+        raise HTTPException(status_code=409, detail="Wallet currency is not supported for checkout")
     if wallet.available_balance < session.total:
         raise HTTPException(status_code=409, detail="Insufficient wallet balance")
-    budget = db.query(UserBudget).filter(UserBudget.user_id == locked_user.id).with_for_update().first()
+    budget = _ensure_budget_capacity(db, locked_user.id, session.total)
 
     now = _now()
     for order in orders:
@@ -360,6 +530,12 @@ def confirm_checkout_session(
         )
         _transition(order, OrderStatus.REVERSAL_WINDOW_OPEN)
         order.reversal_deadline = now + timedelta(seconds=settings.APPROVAL_WINDOW_SECONDS)
+        if order.negotiation_session_id:
+            negotiation = db.query(NegotiationSession).filter(
+                NegotiationSession.id == order.negotiation_session_id,
+                NegotiationSession.checkout_session_id == session.id,
+            ).with_for_update().one()
+            negotiation.status = "completed"
 
     if budget:
         budget.current_spent += session.total
@@ -419,10 +595,14 @@ def approve_pending_order(db: Session, user: User, order: Order, consent_id: str
         raise HTTPException(status_code=410, detail="Approval window expired; reserved stock was released")
 
     consent = _require_consent(db, user, order.price, consent_id, order=order)
+    if not consent.order_snapshot_hash or consent.order_snapshot_hash != order_snapshot_hash(order):
+        raise HTTPException(status_code=409, detail="ORDER_DETAILS_CHANGED: review the order and authorize again")
     wallet = db.query(UserWallet).filter(UserWallet.user_id == user.id).with_for_update().one()
+    if wallet.currency != "PKR":
+        raise HTTPException(status_code=409, detail="Wallet currency is not supported for checkout")
     if wallet.available_balance < order.price:
         raise HTTPException(status_code=409, detail="Insufficient wallet balance")
-    budget = db.query(UserBudget).filter(UserBudget.user_id == user.id).with_for_update().first()
+    budget = _ensure_budget_capacity(db, user.id, order.price)
     existing_debit = (
         db.query(WalletTransaction)
         .filter(
@@ -475,6 +655,9 @@ def _release_checkout_order_stock(db: Session, order: Order) -> None:
     product = db.query(Product).filter(Product.id == order.product_id).with_for_update().first()
     if product:
         product.stock_count += order.quantity
+        deal = db.query(Deal).filter(Deal.product_id == product.id).with_for_update().first()
+        if deal:
+            deal.stock_remaining = product.stock_count
 
 
 def refund_reversible_order(db: Session, user: User, order: Order, reason: str, endpoint: str) -> tuple[float, bool]:

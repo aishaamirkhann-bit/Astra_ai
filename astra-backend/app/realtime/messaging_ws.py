@@ -69,7 +69,7 @@ def _persist_incoming(user_id: int, conversation_id: int, raw: str) -> dict[str,
 
 @router.websocket("/ws/messages/{conversation_id}")
 async def messages_socket(websocket: WebSocket, conversation_id: int):
-    token = websocket.query_params.get("token") or websocket.cookies.get(settings.AUTH_COOKIE_NAME)
+    token = websocket.cookies.get(settings.AUTH_COOKIE_NAME)
     claims = decode_access_token(token) if token else None
     try:
         user_id = int(claims["sub"]) if claims else 0

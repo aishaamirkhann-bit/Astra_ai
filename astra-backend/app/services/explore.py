@@ -1,3 +1,5 @@
+import asyncio
+import logging
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -10,6 +12,9 @@ from app.repository import product_repository
 from app.schemas.explore import ExploreSearchRequest, ProductDetailSchema, QueryType, SortBy
 from app.services import vision as vision_service
 from app.services import voice_service
+
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
+_IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
 
 @dataclass
@@ -46,12 +51,24 @@ async def process_voice_query(audio_file: UploadFile) -> str:
 async def extract_image_features(image_file: UploadFile) -> ImageQueryResult:
     """Use the configured vision provider when available; otherwise fall back to
     the original filename/category heuristic (kept verbatim — a test pins it)."""
-    if not image_file.content_type or not image_file.content_type.startswith("image/"):
+    declared_type = (image_file.content_type or "").lower()
+    if declared_type not in _IMAGE_MIME_TYPES:
         raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Unsupported image format")
-    filename = (image_file.filename or "").lower()
-    image_bytes = await image_file.read()
-
-    vision_result = vision_service.analyze_image(image_bytes, filename)
+    image_bytes = await image_file.read(MAX_IMAGE_BYTES + 1)
+    if len(image_bytes) > MAX_IMAGE_BYTES:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Image must be 5 MB or smaller")
+    if not image_bytes:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="The selected image is empty or invalid")
+    actual_type = vision_service.sniff_image_type(image_bytes)
+    if actual_type is None:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="The selected image is malformed or invalid")
+    if actual_type != declared_type:
+        raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Image content does not match its declared type")
+    try:
+        vision_result = await asyncio.to_thread(vision_service.analyze_image, image_bytes)
+    except Exception as error:
+        logging.getLogger("astra.search").warning("Image analysis failed (%s)", type(error).__name__)
+        vision_result = None
     if vision_result is not None:
         return ImageQueryResult(
             query=vision_result.query,
@@ -60,28 +77,7 @@ async def extract_image_features(image_file: UploadFile) -> ImageQueryResult:
             confidence=vision_result.confidence,
         )
 
-    query = _guess_image_query_from_filename(filename)
-    return ImageQueryResult(query=query, labels=[query])
-
-
-def _guess_image_query_from_filename(filename: str) -> str:
-    if "samsung" in filename:
-        return "samsung smartphone"
-    if any(term in filename for term in ("headphone", "earbud")):
-        return "headphones audio"
-    if any(term in filename for term in ("phone", "mobile", "iphone")):
-        return "smartphone mobile"
-    if any(term in filename for term in ("laptop", "notebook")):
-        return "laptop computer"
-    if "watch" in filename:
-        return "smartwatch wearable"
-    if any(term in filename for term in ("jewelry", "earring")):
-        return "jewelry"
-    if "dress" in filename:
-        return "clothing fashion"
-    if "makeup" in filename:
-        return "makeup beauty"
-    return "smartphone mobile"
+    return ImageQueryResult(query="", labels=[])
 
 
 def parse_query_intent(query: str) -> tuple[str, float | None, list[str]]:
@@ -173,18 +169,19 @@ def resolve_purchase_intent(query: str, image_labels: list[str] | None = None) -
         "query": query,
         "intent": intent,
         "action": {
-            "type": "checkout" if intent == "buy" else "search",
-            "label": "Voice-to-Action autonomous checkout" if intent == "buy" else "Catalog search",
+            "type": "search",
+            "label": "Catalog search",
             "verb": action,
         },
         "budget": budget,
         "category": matched["category"] if matched else category,
         "matched_product": (
             {key: matched[key] for key in ("id", "title", "category", "price", "image_url", "trust", "rating", "seller_name", "is_verified_seller")}
+            | {"origin_country": matched.get("origin_country", "PK")}
             | {"formatted_price": f"Rs. {matched['price']:,.0f}"}
         ) if matched else None,
         "alternatives": alternatives,
-        "auto_checkout": intent == "buy",
+        "auto_checkout": False,
         "confidence": round(min(0.62 + (candidates[0][0] if candidates else 0) / 12, 0.99), 2),
     }
 
@@ -204,8 +201,11 @@ def _to_response_product(product: dict[str, Any]) -> dict[str, Any]:
     search_fields = {
         "id", "title", "category", "price", "rating", "total_reviews",
         "seller_name", "is_verified_seller", "badge", "image_url", "semantic_tags", "trust",
+        "availability", "stock_count",
+        "origin_country",
     }
     return {key: value for key, value in product.items() if key in search_fields} | {
+        "origin_country": product.get("origin_country", "PK"),
         "formatted_price": f"Rs. {product['price']:,.0f}"
     }
 
@@ -321,4 +321,19 @@ async def execute_search(
 
     resolved_query = " ".join(signal.text for signal in signals if signal.text).strip()
     results = hybrid_vector_search(signals, request)
+    for product in results:
+        reasons = []
+        fields = {
+            "title": product["title"],
+            "category": product["category"],
+            "catalog tags": " ".join(product["semantic_tags"]),
+        }
+        for label in image_labels:
+            for field_name, field_value in fields.items():
+                if label.lower() in field_value.lower():
+                    reason = f'Matched visual descriptor "{label}" in catalog {field_name}.'
+                    if reason not in reasons:
+                        reasons.append(reason)
+                    break
+        product["match_reasons"] = reasons
     return FusedSearchResult(results=results, query=resolved_query, signals=signals, image_labels=image_labels)

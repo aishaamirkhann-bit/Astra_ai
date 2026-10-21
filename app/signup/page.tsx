@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ShieldCheck, Mail, User, Loader2, ArrowRight, ShoppingBag, Store } from "lucide-react";
@@ -8,6 +8,7 @@ import { registerUser } from "@/lib/api";
 import { storePendingOtp } from "@/lib/auth";
 import PasswordInput from "@/components/auth/PasswordInput";
 import type { UserRole } from "@/lib/types";
+import { COUNTRY_OPTIONS, getSavedCountry, saveCountry, type CountryCode } from "@/lib/region";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -15,13 +16,24 @@ export default function SignupPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<UserRole>("buyer");
+  const [country, setCountry] = useState<CountryCode>("PK");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    const savedCountry = getSavedCountry();
+    if (savedCountry) setCountry(savedCountry);
+  }, []);
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+
+    if (name.trim().length < 2) {
+      setError("Please enter your full name (at least 2 characters).");
+      return;
+    }
 
     if (password.length < 6) {
       setError("Password kam se kam 6 characters ka hona chahiye.");
@@ -30,7 +42,7 @@ export default function SignupPage() {
 
     setLoading(true);
     try {
-      const otpChallenge = await registerUser({ name, email, password, role });
+      const otpChallenge = await registerUser({ name: name.trim(), email: email.trim(), password, role, country });
       storePendingOtp(otpChallenge);
       router.push("/verify-otp");
     } catch (err) {
@@ -51,7 +63,8 @@ export default function SignupPage() {
     setError(null);
     setGoogleLoading(true);
     const apiUrl = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/api\/v1\/?$/, "");
-    window.location.assign(`${apiUrl}/api/v1/auth/google/start?role=${role}`);
+    const params = new URLSearchParams({ role, country });
+    window.location.assign(`${apiUrl}/api/v1/auth/google/start?${params.toString()}`);
   }
 
   return (
@@ -87,6 +100,13 @@ export default function SignupPage() {
                   className="w-full bg-transparent text-sm text-ink-100 placeholder:text-ink-500 focus:outline-none"
                 />
               </div>
+            </label>
+
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-ink-300">Country or region</span>
+              <select value={country} onChange={(event) => { const selected = event.target.value as CountryCode; setCountry(selected); saveCountry(selected); }} className="w-full rounded-xl border border-base-600 bg-base-800 px-3.5 py-3 text-sm text-ink-100 outline-none focus:border-astra-violet">
+                {COUNTRY_OPTIONS.map((option) => <option key={option.code} value={option.code} className="bg-base-900">{option.name}</option>)}
+              </select>
             </label>
 
             <label className="flex flex-col gap-1.5">
@@ -141,7 +161,7 @@ export default function SignupPage() {
             </div>
 
             {error && (
-              <p className="rounded-lg bg-signal-reject/10 px-3 py-2 text-xs font-medium text-signal-reject">
+              <p role="alert" aria-live="polite" className="rounded-lg bg-signal-reject/10 px-3 py-2 text-xs font-medium text-signal-reject">
                 {error}
               </p>
             )}
@@ -173,6 +193,7 @@ export default function SignupPage() {
               <span className="grid h-5 w-5 place-items-center rounded-full bg-slate-800 text-xs font-bold text-white">G</span>
               {googleLoading ? "Redirecting…" : "Continue with Google"}
             </button>
+            <p className="text-center text-[10px] text-ink-500">Without OAuth keys, development opens a clearly marked local demo account.</p>
           </div>
         </form>
 

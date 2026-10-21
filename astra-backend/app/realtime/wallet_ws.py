@@ -43,7 +43,7 @@ manager = WalletConnectionManager()
 
 @router.websocket("/ws/wallet/{user_id}")
 async def wallet_socket(websocket: WebSocket, user_id: int):
-    token = websocket.query_params.get("token") or websocket.cookies.get(settings.AUTH_COOKIE_NAME)
+    token = websocket.cookies.get(settings.AUTH_COOKIE_NAME)
     claims = decode_access_token(token) if token else None
     if not claims or str(claims.get("sub")) != str(user_id):
         await websocket.close(code=1008, reason="Wallet token does not match user")

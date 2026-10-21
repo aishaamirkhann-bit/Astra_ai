@@ -13,8 +13,9 @@ test.describe("ASTRA showcase widgets", () => {
     await expect(page.getByText(/agreement proximity/i)).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText("Buyer budget", { exact: false })).toBeVisible();
     await expect(page.getByText("Delay threshold", { exact: false })).toBeVisible();
-    await expect(page.getByText(/DEAL SETTLED · Rs\./)).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByText(/Handshake complete in \d+ rounds/)).toBeVisible();
+    await expect(page.getByText(/OFFER ACCEPTED · Rs\./)).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole("button", { name: /Approve this price and continue to checkout/i })).toBeVisible();
+    await expect(page.getByText(/buyer checkout approval is still required/i)).toBeVisible();
   });
 
   test("authenticity tab shows cryptographic stamp and 0% synthetic manipulation", async ({ page }) => {

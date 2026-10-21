@@ -41,6 +41,7 @@ def get_ai_suggestion(
             seller=product.seller_name,
             trust=product.trust,
             category=product.category,
+            origin_country=product.origin_country or "PK",
             image=product.image_url,
             description=product.description,
         ),

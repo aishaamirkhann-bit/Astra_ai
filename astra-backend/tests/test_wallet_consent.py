@@ -1,7 +1,7 @@
 def test_deal_checkout_requires_consent_and_refunds_atomically(auth_client) -> None:
     wallet_before = auth_client.get("/api/v1/wallet").json()
     deals = auth_client.get("/api/v1/deals", params={"page_size": 100}).json()["items"]
-    deal = next(item for item in deals if 50000 < item["price"] < wallet_before["available_balance"] and item["stock_remaining"] > 0)
+    deal = next(item for item in deals if 0 < item["price"] <= 108000 and item["price"] < wallet_before["available_balance"] and item["stock_remaining"] > 0)
     reservation = auth_client.post(f"/api/v1/deals/{deal['id']}/reserve", json={"quantity": 1}).json()
     order_ref = reservation["order_ref"]
 

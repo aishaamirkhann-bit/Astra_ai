@@ -30,6 +30,7 @@ import type {
   CheckoutSessionConfirmation,
   ChatCard,
   ChatConversation,
+  ChatMessage,
   AuditEntry,
   B2bEvaluation,
   DirectConversation,
@@ -42,8 +43,13 @@ import type {
   SwarmTrace,
   ResolutionTimeline,
 } from "@/lib/types";
+import type { CountryCode } from "@/lib/region";
 // Set in .env.local — see lib/api.ts usage below.
 const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/api\/v1\/?$/, "");
+
+export function getVoiceWebSocketUrl(): string {
+  return `${API_URL.replace(/^http/, "ws")}/ws/voice`;
+}
 
 async function apiFetch<T>(path: string, init?: RequestInit, cookieHeader?: string): Promise<T> {
   const clientSide = typeof window !== "undefined" && !cookieHeader;
@@ -54,7 +60,7 @@ async function apiFetch<T>(path: string, init?: RequestInit, cookieHeader?: stri
     const res = await fetch(`${API_URL}/api/v1${path}`, {
       ...init,
       headers: {
-        "Content-Type": "application/json",
+        ...(typeof FormData !== "undefined" && init?.body instanceof FormData ? {} : { "Content-Type": "application/json" }),
         ...(cookieHeader ? { Cookie: cookieHeader } : {}),
         ...init?.headers,
       },
@@ -125,6 +131,7 @@ export function registerUser(payload: {
   password: string;
   role: UserRole;
   preferred_language?: string;
+  country: CountryCode;
 }): Promise<OtpRequiredResponse> {
   return apiFetch<OtpRequiredResponse>("/auth/register", {
     method: "POST",
@@ -177,6 +184,24 @@ export function getExploreData(cookieHeader?: string): Promise<{ available_balan
 }
 
 export function getCurrentUser(cookieHeader?: string): Promise<LoginResponse["user"]> { return apiFetch("/auth/me", undefined, cookieHeader); }
+export function updateRegionalPreferences(country: CountryCode, preferred_language: string): Promise<LoginResponse["user"]> {
+  return apiFetch("/auth/me/preferences", { method: "PATCH", body: JSON.stringify({ country, preferred_language }) });
+}
+
+export interface B2BQuote { id: number; bid_id: number; vendor_id: number; vendor_name: string; offered_price: number; delivery_days: number; ai_match_score: number; commission_rate: number; commission_amount: number; vendor_net_payout: number; is_featured: boolean; status: string; created_at: string; }
+export interface B2BBidRequest { id: number; buyer_id: number; title: string; description: string; category: string; quantity: number; target_budget: number; delivery_days: number; status: string; created_at: string; quotes: B2BQuote[]; }
+export interface VendorPlan { tier: "Basic" | "Pro" | "Enterprise"; monthly_price: number; features: string[]; currency: "PKR"; billing_period: "monthly"; }
+export interface KhataAlert { retailer_id: number; low_stock_alerts: Array<{ product_id: string; title: string; stock_count: number; replenish_suggested: number }>; replenishment_is_advisory: boolean; khata_outstanding: number; credit_limit: number; credit_utilization_percent: number; khata_risk_status: "low" | "watch" | "high" | "over_limit"; commission_tracked: number; }
+export function getB2BBidRequests(): Promise<B2BBidRequest[]> { return apiFetch("/b2b/requests"); }
+export function createB2BBidRequest(payload: Omit<B2BBidRequest, "id" | "buyer_id" | "status" | "created_at" | "quotes"> & { closes_at?: string | null }): Promise<B2BBidRequest> { return apiFetch("/b2b/requests", { method: "POST", body: JSON.stringify(payload) }); }
+export function placeB2BVendorQuote(payload: { bid_id: number; offered_price: number; delivery_days: number; is_featured: boolean }): Promise<B2BQuote> { return apiFetch("/b2b/place-bid", { method: "POST", body: JSON.stringify(payload) }); }
+export function awardB2BVendorQuote(bidId: number, quoteId: number): Promise<B2BQuote & { bid_status: string; selection_status: string; order_created: boolean; payment_processed: boolean }> { return apiFetch(`/b2b/requests/${bidId}/award/${quoteId}`, { method: "POST" }); }
+export function getVendorB2BQuotes(): Promise<Array<B2BQuote & { request: B2BBidRequest }>> { return apiFetch("/b2b/vendor/quotes"); }
+export function getVendorPlans(): Promise<VendorPlan[]> { return apiFetch("/subscriptions/plans"); }
+export function getMyVendorSubscription(): Promise<{ tier: string; monthly_price: number; status: string }> { return apiFetch("/subscriptions/me"); }
+export function selectVendorPlan(tier: VendorPlan["tier"]): Promise<{ tier: string; monthly_price: number; status: string; message: string }> { return apiFetch(`/subscriptions/select?tier=${encodeURIComponent(tier)}`, { method: "POST" }); }
+export function getKhataAlert(retailerId: number): Promise<KhataAlert> { return apiFetch(`/distribution/khata-alert/${retailerId}`); }
+export function createDistributionEntry(payload: { retailer_id: number; product_id?: string; entry_type: "sale" | "repayment"; transaction_amount: number; credit_amount?: number; credit_limit?: number; reference?: string }): Promise<{ id: number; entry_type: string; commission_amount: number; credit_amount: number; khata_amount: number; credit_limit: number }> { return apiFetch("/distribution/ledger", { method: "POST", body: JSON.stringify(payload) }); }
 export function changeAccountRole(role: UserRole): Promise<LoginResponse> {
   return apiFetch<LoginResponse>("/auth/role", {
     method: "POST",
@@ -257,7 +282,7 @@ export function getCart(cookieHeader?: string): Promise<Cart> { return apiFetch<
 export function updateCartItem(itemId: number, quantity: number): Promise<Cart> { return apiFetch<Cart>(`/cart/${itemId}`, { method: "PUT", body: JSON.stringify({ quantity }) }); }
 export function removeCartItem(itemId: number): Promise<Cart> { return apiFetch<Cart>(`/cart/${itemId}`, { method: "DELETE" }); }
 export function checkoutCart(payload: { shipping_address: string; consent_id?: string }): Promise<CartCheckout> { return apiFetch<CartCheckout>("/cart/checkout", { method: "POST", body: JSON.stringify(payload) }); }
-export function createCheckoutSession(payload: { shipping_address: string }): Promise<CheckoutSession> { return apiFetch<CheckoutSession>("/checkout/session", { method: "POST", body: JSON.stringify(payload) }); }
+export function createCheckoutSession(payload: { shipping_address: string; negotiation_session_id?: number }): Promise<CheckoutSession> { return apiFetch<CheckoutSession>("/checkout/session", { method: "POST", body: JSON.stringify(payload) }); }
 export function getCheckoutSession(checkoutRef: string): Promise<CheckoutSession> { return apiFetch<CheckoutSession>(`/checkout/session/${checkoutRef}`); }
 export function confirmCheckoutSession(checkoutRef: string, consentId: string): Promise<CheckoutSessionConfirmation> { return apiFetch<CheckoutSessionConfirmation>(`/checkout/session/${checkoutRef}/confirm`, { method: "POST", body: JSON.stringify({ consent_id: consentId }) }); }
 export function abandonCheckoutSession(checkoutRef: string): Promise<CheckoutSession> { return apiFetch<CheckoutSession>(`/checkout/session/${checkoutRef}/abandon`, { method: "POST" }); }
@@ -266,6 +291,8 @@ export interface MultimodalChatResponse {
   conversation_id: number;
   reply_text: string;
   products: ChatCard[];
+  card_type?: ChatMessage["card_type"];
+  card?: ChatMessage["card"];
   vision_status: "not_requested" | "analyzed" | "not_configured" | "provider_error";
 }
 export async function sendMultimodalChat(payload: {
@@ -360,12 +387,28 @@ export interface NegotiationRound {
   seller_ask: number;
   counter_offer?: number | null;
   final_price?: number | null;
-  market_average: number;
+  market_average: number | null;
+  quantity: number;
+  final_total?: number | null;
   reasoning: string[];
 }
 
-export function submitNegotiationOffer(productId: string, payload: { offer_price: number; round: number; session_id?: number }): Promise<NegotiationRound> {
+export function submitNegotiationOffer(productId: string, payload: { offer_price: number; round: number; session_id?: number; quantity: number; size: string; color: string; storage: string; locale?: string }): Promise<NegotiationRound> {
   return apiFetch<NegotiationRound>(`/negotiation/${productId}/offer`, { method: "POST", body: JSON.stringify(payload) });
+}
+
+export interface NegotiationApproval {
+  session_id: number;
+  status: "buyer_approved";
+  product_id: string;
+  seller_id: string;
+  quantity: number;
+  unit_price: number;
+  total: number;
+}
+
+export function approveNegotiatedOffer(sessionId: number): Promise<NegotiationApproval> {
+  return apiFetch<NegotiationApproval>(`/negotiation/sessions/${sessionId}/approve`, { method: "POST" });
 }
 
 export interface AuthenticityAudit {
@@ -406,7 +449,7 @@ export function getProductAuthenticity(slug: string): Promise<AuthenticityAudit>
 }
 
 export interface SellerInventoryItem {
-  id: string; title: string; category: string; price: number; stock_count: number;
+  id: string; title: string; category: string; price: number; seller_price_floor: number; stock_count: number;
   status: "active" | "inactive" | "low_stock"; image_url: string;
   barcode?: string | null; brand?: string; subcategory?: string; color?: string;
   size?: string; variant?: string; barcode_verified?: boolean;
@@ -417,7 +460,7 @@ export interface SellerEscrowOrder {
   order_status: string; escrow_status: "LOCKED" | "RELEASED" | "REFUNDED"; placed_at: string;
 }
 export type SellerInventoryPayload = {
-  title: string; category: string; price: number; stock_count: number;
+  title: string; category: string; price: number; seller_price_floor?: number; stock_count: number;
   description?: string; image_url?: string; barcode?: string; brand?: string;
   subcategory?: string; color?: string; size?: string; variant?: string;
   specifications?: Record<string, string>; quality_tags?: string[];
@@ -443,6 +486,33 @@ export type SellerDashboardStats = {
   revenue_series: Array<{ label: string; amount: number }>;
   top_products: Array<{ id: string; title: string; price: number; stock_count: number; sales_velocity: number }>;
 };
+export type SellerAnalyticsInsights = {
+  window_days: number;
+  privacy: string;
+  search_trends: {
+    available: boolean;
+    keywords: string[];
+    voice_keywords: string[];
+    visual_keywords: string[];
+    message: string;
+  };
+  negotiation: {
+    session_count: number;
+    accepted_offer_count: number;
+    offer_acceptance_rate: number;
+    negotiation_to_paid_order_rate: number;
+    accepted_price_distribution: { accepted_offer_count: number; minimum: number | null; median: number | null; maximum: number | null };
+    pricing_signal: string;
+  };
+  variant_demand_30d: Array<{ product_id: string; product_title: string; color: string | null; size: string | null; negotiations_30d: number }>;
+  inventory: {
+    active: number;
+    low_stock: number;
+    out_of_stock: number;
+    low_stock_threshold: number;
+    stock_alerts: Array<{ product_id: string; product_title: string; stock_count: number; negotiations_30d: number; urgency: "high" | "watch"; recommendation: string }>;
+  };
+};
 export type SellerWalletData = {
   available_balance: number | null;
   pending_payouts: number | null;
@@ -464,6 +534,16 @@ export const updateSellerInventory = (id: string, payload: Partial<SellerInvento
 export const deleteSellerInventory = (id: string) => apiFetch<void>(`/seller/inventory/${id}`, { method: "DELETE" });
 export const lookupSellerBarcode = (barcode: string) => apiFetch<BarcodeProductLookup>(`/seller/catalog/barcode/${encodeURIComponent(barcode)}`);
 export const getSellerDashboardStats = () => apiFetch<SellerDashboardStats>("/seller/dashboard-stats");
+export const getSellerAnalyticsInsights = () => apiFetch<SellerAnalyticsInsights>("/seller/analytics/insights");
+export const askSellerAssistant = (query: string) => apiFetch<{ message: string; read_only: true }>("/seller/assistant", {
+  method: "POST",
+  body: JSON.stringify({ query }),
+});
+export type CodRiskResult = { order_ref: string; cod_status: "unrecorded"; score: number; level: "LOW" | "MEDIUM" | "HIGH"; factors: string[]; advisory_only: true; confirmation_state: string | null; payment_method_recorded?: false; cod_applicability?: "not_recorded"; cross_border_advisory?: { message: string; advisory_only: true; included_in_checkout: false } | null; settlement_automatically_changed?: false };
+export const getSellerOrderRisk = (orderRef: string) => apiFetch<CodRiskResult>(`/cod-risk/orders/${encodeURIComponent(orderRef)}`);
+export type SupportedLocale = "en" | "ur" | "roman_urdu" | "pa" | "ps" | "sd" | "fa" | "zh" | "ar";
+export const triggerSellerOrderConfirmation = (orderRef: string, language: SupportedLocale = "roman_urdu") => apiFetch<{ state: string; prompt: string; delivery_status: string; settlement_automatically_changed: false }>(`/cod-risk/orders/${encodeURIComponent(orderRef)}/confirmation`, { method: "POST", body: JSON.stringify({ language }) });
+export const recordSellerRiskReview = (orderRef: string, reason: string) => apiFetch<{ state: string }>(`/cod-risk/orders/${encodeURIComponent(orderRef)}/manual-review`, { method: "POST", body: JSON.stringify({ reason }) });
 export const lookupSellerBarcodePost = (barcode: string) => apiFetch<BarcodeProductLookup>("/seller/products/barcode-lookup", { method: "POST", body: JSON.stringify({ barcode }) });
 export const getSellerWallet = () => apiFetch<SellerWalletData>("/seller/wallet");
 export const getSellerGoals = () => apiFetch<SellerGoalData[]>("/seller/goals");
@@ -516,12 +596,14 @@ export async function pingBackendHealth(): Promise<{ ok: boolean; latencyMs: num
   }
 }
 
-export function parseVoiceIntent(query: string, imageFile?: File): Promise<VoiceIntentResult> {
+export function parseVoiceIntent(query: string, imageFile?: File, locale = "en-US", buyerCountry = "PK"): Promise<VoiceIntentResult> {
   // /explore/intent is multipart (not JSON) so an optional image can travel
   // alongside the transcript — apiFetch can't be reused here since it hardcodes
   // Content-Type: application/json (see the streamChat escape hatch below).
   const body = new FormData();
   body.append("query", query);
+  body.append("locale", locale);
+  body.append("buyer_country", buyerCountry);
   if (imageFile) body.append("image_file", imageFile);
   return fetch(`${API_URL}/api/v1/explore/intent`, { method: "POST", credentials: "include", body }).then((res) => {
     if (!res.ok) throw new Error("Voice intent request failed");
@@ -607,6 +689,75 @@ export function getWalletWebSocketUrl(userId: number): string {
 
 export function getOrders(cookieHeader?: string): Promise<OrderOut[]> {
   return apiFetch<OrderOut[]>("/orders", undefined, cookieHeader);
+}
+
+export interface OrderTrackingStage { key: string; label: string; status: "done" | "active" | "pending" | "cancelled"; at: string | null; }
+export interface TrackedOrder { order_ref: string; product_name: string; status: string; placed_at: string | null; delivered_at: string | null; timeline: OrderTrackingStage[]; }
+export function trackOrders(query = "", orderRef?: string): Promise<{ orders: TrackedOrder[] }> {
+  const params = new URLSearchParams();
+  if (query) params.set("query", query);
+  if (orderRef) params.set("order_ref", orderRef);
+  return apiFetch<{ orders: TrackedOrder[] }>(`/orders/track?${params.toString()}`);
+}
+export function requestOrderReturn(payload: { order_ref: string; reason: string; confirmed: boolean; request_type?: "return" | "exchange" }): Promise<{ request_id: number; order_ref: string; request_type: string; status: string; message: string }> {
+  return apiFetch<{ request_id: number; order_ref: string; request_type: string; status: string; message: string }>("/orders/return-request", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export interface BundleOfferLine {
+  product_id: string; title: string; quantity: number; list_unit_price: number;
+  seller_floor: number; offered_unit_price: number; line_total: number;
+}
+export interface BundleOffer {
+  items: BundleOfferLine[]; list_total: number; offer_total: number;
+  estimated_savings: number; binding: false; requires_buyer_approval: true; message: string;
+}
+export function getBundleAdvisory(items: Array<{ product_id: string; quantity: number }>): Promise<BundleOffer> {
+  return apiFetch<BundleOffer>("/negotiation/bundle/advisory", { method: "POST", body: JSON.stringify({ items }) });
+}
+export interface BundleProductCandidate { id: string; title: string; price: number; stock_count: number | null; availability: string; }
+export function getBundleProductCandidates(): Promise<BundleProductCandidate[]> {
+  return apiFetch<BundleProductCandidate[]>("/explore/products");
+}
+export interface OutfitRecommendationItem { slot: string; product: { id: string; title: string; category: string; color: string; price: number; image_url: string; origin_country: "PK" | "CN" | "IR" | "AE"; stock_count: number }; reasons: string[]; }
+export interface OutfitRecommendations { product_id: string; outfits: Array<{ items: OutfitRecommendationItem[]; estimated_total: number; advisory_only: true }>; message: string; }
+export function getOutfitRecommendations(productId: string): Promise<OutfitRecommendations> {
+  return apiFetch<OutfitRecommendations>(`/products/${encodeURIComponent(productId)}/outfit-recommendations`);
+}
+export type TrustScore = {
+  product_id: string; product_name: string; score: number; grade: string; badge: string;
+  verified: boolean; confidence: "high" | "low"; advisory_only: true;
+  evidence: {
+    reviews: { score: number; count: number; available: boolean; mismatch_rate: number | null; duplicate_rate: number | null; velocity_flag: boolean; highlights: string[] };
+    photos: { score: number; count: number; available: boolean; match_rate: number | null; duplicate_rate: number | null; highlights: string[] };
+    seller: { score: number; verified: boolean; available: boolean };
+  };
+};
+export function getProductTrustScore(productId: string): Promise<TrustScore> {
+  return apiFetch<TrustScore>(`/products/${encodeURIComponent(productId)}/trust-score`);
+}
+
+export interface SpatialDecorItem {
+  slot: string;
+  product: { id: string; title: string; category: string; price: number; image_url: string; origin_country: "PK" | "CN" | "IR" | "AE"; stock_count: number; model_url: string | null };
+  match_reason: string;
+  cross_border_advisory: { estimated_eta: string; message: string; advisory_only: true } | null;
+}
+export interface SpatialDecorRecommendations {
+  locale: string;
+  room_attributes: Record<string, string>;
+  items: SpatialDecorItem[];
+  estimated_bundle_total: number;
+  advisory_only: true;
+  review_required: true;
+  dimension_note: string;
+  message: string;
+}
+export async function getSpatialDecorRecommendations(image: File, message = "", locale = "en"): Promise<SpatialDecorRecommendations> {
+  const form = new FormData();
+  form.set("image", image);
+  form.set("message", message);
+  form.set("locale", locale);
+  return apiFetch<SpatialDecorRecommendations>("/spatial-decorator/recommendations", { method: "POST", body: form });
 }
 
 export function getOrderDetail(orderRef: string): Promise<OrderDetail> { return apiFetch<OrderDetail>(`/orders/${orderRef}`); }

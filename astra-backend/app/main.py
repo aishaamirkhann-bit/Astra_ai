@@ -21,6 +21,7 @@ from app.realtime.wallet_ws import router as wallet_ws_router
 from app.realtime.notifications_ws import router as notifications_ws_router, manager as notification_manager
 from app.realtime.messaging_ws import router as messaging_ws_router
 from app.realtime.negotiation_ws import router as negotiation_ws_router
+from app.realtime.voice_ws import router as voice_ws_router
 from app.db.runtime_migrations import apply_sqlite_compatibility_migrations, migrate_legacy_wallet_data
 from app.services.deal_events import deal_event_bus
 from app.services.checkout_fsm import expire_checkout_sessions, finalize_reversal_orders
@@ -226,6 +227,7 @@ app.include_router(wallet_ws_router)
 app.include_router(notifications_ws_router)
 app.include_router(messaging_ws_router)
 app.include_router(negotiation_ws_router)
+app.include_router(voice_ws_router)
 
 
 @app.get("/health")

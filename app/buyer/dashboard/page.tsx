@@ -4,7 +4,8 @@ import HomeClient from "@/components/HomeClient";
 import { getHomePage } from "@/lib/api";
 
 export default async function BuyerDashboardPage() {
-  const cookieHeader = cookies()
+  const cookieStore = await cookies();
+  const cookieHeader = cookieStore
     .getAll()
     .map(({ name, value }) => `${name}=${value}`)
     .join("; ");

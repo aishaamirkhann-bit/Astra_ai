@@ -33,6 +33,19 @@ def test_multimodal_chat_returns_text_and_matching_product_cards(auth_client: Te
     assert all(item["slug"] and item["price"] <= 200_000 for item in payload["products"])
 
 
+def test_chat_greeting_returns_warm_roman_urdu_without_catalog_noise(
+    auth_client: TestClient,
+    created_chat_conversations: list[int],
+) -> None:
+    response = auth_client.post("/api/v1/chat/message", data={"message": "salaam"})
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    created_chat_conversations.append(payload["conversation_id"])
+    assert payload["reply_text"] == "Walaikum Assalam! Astra AI mein aapka khushamdeed. Main aapki kya madad karoon?"
+    assert payload["products"] == []
+
+
 def test_multimodal_chat_analyzes_attached_image(
     auth_client: TestClient,
     monkeypatch,

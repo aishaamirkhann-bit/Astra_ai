@@ -17,12 +17,13 @@ DEMO_EMAIL = "aisha@astra.ai"
 
 
 def _deal(auth_client, *, min_stock: int = 1, max_price: float | None = None) -> dict:
+    price_ceiling = max_price if max_price is not None else 100_000
     deals = auth_client.get("/api/v1/deals", params={"page_size": 100}).json()["items"]
     return next(
         item
         for item in deals
         if item["stock_remaining"] >= min_stock
-        and (max_price is None or item["price"] < max_price)
+        and item["price"] < price_ceiling
     )
 
 
@@ -317,4 +318,27 @@ def test_reversal_finalization_updates_checkout_session_status(auth_client) -> N
                     if budget and budget_before is not None:
                         budget.current_spent = budget_before
                     db.commit()
+        _reset_checkout_state(auth_client)
+
+
+def test_checkout_session_cannot_exceed_backend_monthly_budget(auth_client) -> None:
+    _reset_checkout_state(auth_client)
+    deal = _deal(auth_client, min_stock=1, max_price=50_000)
+    _add_variant(auth_client, deal["slug"], "Budget limit")
+    with SessionLocal() as db:
+        user = db.query(User).filter(User.email == DEMO_EMAIL).one()
+        budget = db.query(UserBudget).filter(UserBudget.user_id == user.id).one()
+        old_spent = budget.current_spent
+        budget.current_spent = budget.monthly_limit + budget.rollover_savings
+        db.commit()
+    try:
+        response = auth_client.post("/api/v1/checkout/session", json={"shipping_address": ADDRESS})
+        assert response.status_code == 409
+        assert response.json()["detail"] == "MONTHLY_BUDGET_EXCEEDED"
+    finally:
+        with SessionLocal() as db:
+            user = db.query(User).filter(User.email == DEMO_EMAIL).one()
+            budget = db.query(UserBudget).filter(UserBudget.user_id == user.id).one()
+            budget.current_spent = old_spent
+            db.commit()
         _reset_checkout_state(auth_client)

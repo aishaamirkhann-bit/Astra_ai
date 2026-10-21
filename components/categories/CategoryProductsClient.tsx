@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { Check, ChevronLeft, Heart, Loader2, ShieldCheck, Star } from "lucide-react";
 import { createShoppingGoal } from "@/lib/api";
 import { showToast } from "@/lib/toast";
+import CatalogProductImage from "@/components/CatalogProductImage";
+import CrossBorderShippingBadge from "@/components/CrossBorderShippingBadge";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -20,6 +22,9 @@ type Product = {
   is_verified_seller: boolean;
   badge: string | null;
   image_url: string;
+  origin_country: "PK" | "CN" | "IR" | "AE";
+  availability: "in_stock" | "out_of_stock" | "unavailable" | "unknown";
+  stock_count: number | null;
 };
 
 export default function CategoryProductsClient({ categoryName }: { categoryName: string }) {
@@ -134,7 +139,9 @@ export default function CategoryProductsClient({ categoryName }: { categoryName:
         {products.map((product) => (
           <article key={product.id} className="glass glass-hover group rounded-xl2 p-3">
             <Link href={`/product/${product.id}`} className="block">
-              <div className="photo-frame relative mb-3 aspect-square rounded-lg" style={{ backgroundImage: `url(${product.image_url})` }}>
+              <div className="photo-frame relative mb-3 aspect-square overflow-hidden rounded-lg">
+                <CatalogProductImage src={product.image_url} title={product.title} category={product.category} className="h-full w-full object-cover" />
+                <CrossBorderShippingBadge originCountry={product.origin_country} />
                 {product.badge && <span className="absolute left-2 top-2 rounded-full bg-astra-gradient px-2 py-0.5 text-[9px] font-semibold text-white">{product.badge}</span>}
               </div>
               <p className="truncate text-xs font-medium text-ink-100">{product.title}</p>
@@ -143,6 +150,7 @@ export default function CategoryProductsClient({ categoryName }: { categoryName:
                 {product.is_verified_seller && <span className="flex items-center gap-1 text-signal-good"><ShieldCheck className="h-3 w-3" />Verified</span>}
               </div>
               <p className="mt-1 font-display text-sm font-semibold text-ink-100">{product.formatted_price}</p>
+              <p className="text-[10px] text-ink-500">{product.availability === "in_stock" ? `In stock${product.stock_count === null ? "" : ` · ${product.stock_count} available`}` : product.availability === "out_of_stock" ? "Out of stock" : product.availability === "unavailable" ? "Listing unavailable" : "Availability not tracked"}</p>
               <p className="truncate text-[10px] text-ink-500">{product.seller_name}</p>
             </Link>
             <button

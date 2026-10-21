@@ -10,13 +10,16 @@ import { showToast } from "@/lib/toast";
 export default function GoogleAuthCallbackPage() {
   const router = useRouter();
   const [error, setError] = useState("");
+  const [localDemo, setLocalDemo] = useState(false);
 
   useEffect(() => {
     let active = true;
+    const isLocalDemo = new URLSearchParams(window.location.search).get("mode") === "local-demo";
+    setLocalDemo(isLocalDemo);
     void getCurrentUser().then((user) => {
       if (!active) return;
       storeUserProfile(user);
-      showToast(`Welcome to ASTRA, ${user.name}`, "success");
+      showToast(isLocalDemo ? `Local development demo session: ${user.name}` : `Welcome to ASTRA, ${user.name}`, "success");
       router.replace(user.role === "seller" ? "/seller/dashboard" : "/buyer/dashboard");
       router.refresh();
     }).catch(() => {
@@ -51,7 +54,7 @@ export default function GoogleAuthCallbackPage() {
           </>
         ) : (
           <>
-            <h1 className="mt-5 font-display text-lg font-semibold text-ink-100">Finishing Google sign-in</h1>
+            <h1 className="mt-5 font-display text-lg font-semibold text-ink-100">{localDemo ? "Opening local demo account" : "Finishing Google sign-in"}</h1>
             <p className="mt-2 text-sm text-ink-500">Securely loading your ASTRA account…</p>
             <Loader2 className="mx-auto mt-5 h-5 w-5 animate-spin text-astra-cyan" />
           </>

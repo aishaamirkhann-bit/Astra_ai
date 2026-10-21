@@ -13,6 +13,7 @@ class ProductOut(BaseModel):
     seller: str
     trust: int
     category: str
+    origin_country: str = "PK"
     image: Optional[str] = None
     description: Optional[str] = None
 

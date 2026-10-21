@@ -1,5 +1,6 @@
 import re
 import json
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field
@@ -8,7 +9,10 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_active_seller, get_db
 from app.models.order import Order
+from app.models.order import OrderStatus
+from app.models.negotiation import NegotiationSession
 from app.models.product import Product
+from app.models.order_return import OrderReturnRequest
 from app.models.user import User
 from app.models.trust import SellerVerification
 from app.models.seller_profile import SellerProfile
@@ -21,6 +25,8 @@ from app.services.seller_payouts import (
     SellerPayoutsUnavailable,
     get_seller_payout_processor,
 )
+from app.services.seller_analytics import build_seller_insights
+from app.services.cod_risk_engine import score_cod_risk
 
 router = APIRouter(prefix="/seller", tags=["Seller Dashboard"])
 
@@ -29,6 +35,7 @@ class InventoryInput(BaseModel):
     title: str = Field(min_length=2, max_length=160)
     category: str = Field(min_length=2, max_length=80)
     price: float = Field(gt=0)
+    seller_price_floor: float | None = Field(default=None, gt=0)
     stock_count: int = Field(ge=0)
     description: str = Field(default="", max_length=2000)
     image_url: str = "/images/products/default-product.png"
@@ -47,6 +54,7 @@ class InventoryUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=2, max_length=160)
     category: str | None = Field(default=None, min_length=2, max_length=80)
     price: float | None = Field(default=None, gt=0)
+    seller_price_floor: float | None = Field(default=None, gt=0)
     stock_count: int | None = Field(default=None, ge=0)
     description: str | None = Field(default=None, max_length=2000)
     image_url: str | None = None
@@ -75,6 +83,49 @@ class PayoutRequestInput(BaseModel):
     amount: float = Field(gt=0)
 
 
+class SellerAssistantQuery(BaseModel):
+    query: str = Field(min_length=1, max_length=500)
+
+
+def _seller_assistant_reply(query: str, seller: User, db: Session) -> str:
+    """Build a seller-scoped, read-only summary from current workspace records."""
+    seller_id = _seller_slug(seller)
+    products = db.query(Product).filter(Product.seller_id == seller_id).all()
+    orders = db.query(Order).join(Product).filter(Product.seller_id == seller_id).order_by(Order.created_at.desc()).limit(100).all()
+    text = query.casefold()
+    if any(word in text for word in ("cod", "risk", "confirmation", "confirm")):
+        high_risk = 0
+        for order in orders:
+            if order.status in {OrderStatus.CANCELLED, OrderStatus.DELIVERED}:
+                continue
+            history = db.query(Order).filter(Order.user_id == order.user_id, Order.id != order.id, Order.status == OrderStatus.DELIVERED).all()
+            average = sum(item.price for item in history) / len(history) if history else None
+            returns = db.query(OrderReturnRequest).filter(
+                OrderReturnRequest.user_id == order.user_id,
+                OrderReturnRequest.status.in_(("approved", "completed", "returned")),
+            ).count()
+            assessment = score_cod_risk(delivered_orders=len(history), return_count=returns, order_total=order.price,
+                                        historical_average=average, route_risk=None, phone_verified=None)
+            high_risk += assessment.level == "HIGH"
+        pending = sum(order.status in {OrderStatus.PENDING_APPROVAL, OrderStatus.REVERSAL_WINDOW_OPEN} for order in orders)
+        return (f"I reviewed {len(orders)} recent seller orders. {high_risk} currently score as high COD risk and {pending} await order review. "
+                "These scores are advisory only; review the COD Risk panel for order-level factors. No order was changed.")
+    if any(word in text for word in ("bundle", "floor", "price", "discount", "pricing")):
+        configured = [item for item in products if item.seller_price_floor is not None and item.seller_price_floor > 0]
+        below_floor = sum(item.base_price < item.seller_price_floor for item in configured)
+        return (f"You have {len(configured)} listings with seller price floors configured. "
+                f"{below_floor} listed prices are below their saved floor and may need review. Bundle offers should be calculated from each item's floor; this assistant does not set or approve discounts.")
+    if any(word in text for word in ("order", "shipment", "pending", "fulfillment", "return")):
+        counts = {status.value: sum(order.status == status for order in orders) for status in OrderStatus}
+        summary = ", ".join(f"{count} {status.replace('_', ' ')}" for status, count in counts.items() if count)
+        return f"Across your {len(orders)} most recent orders: {summary or 'no order records yet'}. Use the Orders or Fulfillment page to review an order and take an allowed action. I have not changed any order."
+    active = sum(item.listing_status == "active" for item in products)
+    low_stock = sum(item.listing_status == "active" and item.stock_count < 5 for item in products)
+    out_of_stock = sum(item.stock_count == 0 for item in products)
+    return (f"Your seller catalog has {len(products)} listings: {active} active, {low_stock} active listings below 5 units, and {out_of_stock} out of stock. "
+            "Open Merchant Insights for detailed trends or Inventory to update stock. I only read your seller-scoped catalog data.")
+
+
 def _seller_slug(user: User) -> str:
     return re.sub(r"[^a-z0-9]+", "-", user.name.lower()).strip("-")
 
@@ -83,6 +134,7 @@ def _product_out(product: Product) -> dict:
     return {
         "id": product.id, "title": product.title, "category": product.category,
         "price": product.base_price, "stock_count": product.stock_count,
+        "seller_price_floor": product.seller_price_floor,
         "status": product.listing_status if product.stock_count >= 5 else "low_stock" if product.listing_status == "active" else product.listing_status,
         "image_url": product.image_url, "barcode": product.barcode,
         "brand": product.brand, "subcategory": product.subcategory,
@@ -126,8 +178,8 @@ def barcode_lookup_post(payload: BarcodeLookupInput, db: Session = Depends(get_d
 
 @router.get("/dashboard-stats")
 def dashboard_stats(db: Session = Depends(get_db), seller: User = Depends(get_current_active_seller)):
-    products = db.query(Product).filter(Product.seller_name == seller.name).all()
-    orders = db.query(Order).join(Product).filter(Product.seller_name == seller.name).all()
+    products = db.query(Product).filter(Product.seller_id == _seller_slug(seller)).all()
+    orders = db.query(Order).join(Product).filter(Product.seller_id == _seller_slug(seller)).all()
     paid_statuses = {"confirmed", "shipped", "delivered"}
     revenue = sum(order.price for order in orders if order.status.value in paid_statuses)
     inventory_value = sum(product.base_price * product.stock_count for product in products)
@@ -150,16 +202,6 @@ def dashboard_stats(db: Session = Depends(get_db), seller: User = Depends(get_cu
             label = order.created_at.strftime("%b")
             if label in revenue_by_month:
                 revenue_by_month[label] += order.price
-    if profile and (
-        profile.total_revenue != revenue
-        or (verification and profile.trust_score != verification.trust_index)
-    ):
-        profile.total_revenue = revenue
-        if verification:
-            profile.trust_score = verification.trust_index
-            profile.authenticity_score = verification.review_sentiment_score
-            profile.compliance_status = verification.verification_status
-        db.commit()
     return {
         "total_revenue": round(revenue, 2),
         "pending_orders": pending_orders,
@@ -182,20 +224,76 @@ def dashboard_stats(db: Session = Depends(get_db), seller: User = Depends(get_cu
     }
 
 
+@router.post("/assistant")
+def seller_assistant(payload: SellerAssistantQuery, db: Session = Depends(get_db), seller: User = Depends(get_current_active_seller)):
+    """Seller workspace copilot; answers from seller-owned data without mutations."""
+    return {"message": _seller_assistant_reply(payload.query.strip(), seller, db), "read_only": True}
+
+
+@router.get("/analytics/insights")
+def seller_analytics_insights(
+    db: Session = Depends(get_db),
+    seller: User = Depends(get_current_active_seller),
+):
+    """Return seller-scoped aggregates without persisting analytics or buyer data."""
+    seller_id = _seller_slug(seller)
+    products = db.query(
+        Product.id, Product.title, Product.base_price, Product.stock_count,
+        Product.listing_status,
+    ).filter(Product.seller_id == seller_id).all()
+    product_rows = [
+        {"id": row.id, "title": row.title, "price": row.base_price,
+         "stock_count": row.stock_count, "listing_status": row.listing_status}
+        for row in products
+    ]
+    window_start = datetime.now(timezone.utc) - timedelta(days=30)
+    session_rows = db.query(
+        NegotiationSession.product_id, NegotiationSession.status,
+        NegotiationSession.final_price, NegotiationSession.created_at,
+        NegotiationSession.size, NegotiationSession.color,
+    ).join(Product, Product.id == NegotiationSession.product_id).filter(
+        NegotiationSession.seller_id == seller_id,
+        Product.seller_id == seller_id,
+        NegotiationSession.created_at >= window_start,
+    ).all()
+    negotiation_rows = [
+        {"product_id": row.product_id, "status": row.status,
+         "final_price": row.final_price, "created_at": row.created_at,
+         "size": row.size, "color": row.color}
+        for row in session_rows
+    ]
+    paid_order_counts = dict(db.query(
+        Order.product_id, func.count(Order.id),
+    ).join(Product, Product.id == Order.product_id).join(
+        NegotiationSession, NegotiationSession.id == Order.negotiation_session_id,
+    ).filter(
+        Product.seller_id == seller_id,
+        NegotiationSession.seller_id == seller_id,
+        NegotiationSession.product_id == Order.product_id,
+        NegotiationSession.created_at >= window_start,
+        Order.created_at >= window_start,
+        Order.status.in_((OrderStatus.CONFIRMED, OrderStatus.SHIPPED, OrderStatus.DELIVERED)),
+    ).group_by(Order.product_id).all())
+    return build_seller_insights(product_rows, negotiation_rows, paid_order_counts)
+
+
 @router.get("/inventory")
 def inventory(db: Session = Depends(get_db), seller: User = Depends(get_current_active_seller)):
-    products = db.query(Product).filter(Product.seller_name == seller.name).order_by(Product.title).all()
+    products = db.query(Product).filter(Product.seller_id == _seller_slug(seller)).order_by(Product.title).all()
     return [_product_out(product) for product in products]
 
 
 @router.post("/inventory", status_code=201)
 def create_inventory(payload: InventoryInput, db: Session = Depends(get_db), seller: User = Depends(get_current_active_seller)):
+    if payload.seller_price_floor is not None and payload.seller_price_floor > payload.price:
+        raise HTTPException(status_code=422, detail="Seller price floor cannot exceed the listing price")
     base = re.sub(r"[^a-z0-9]+", "-", payload.title.lower()).strip("-")
     product_id, suffix = base, 2
     while db.get(Product, product_id):
         product_id, suffix = f"{base}-{suffix}", suffix + 1
     product = Product(
         id=product_id, title=payload.title, category=payload.category, base_price=payload.price,
+        seller_price_floor=payload.seller_price_floor or payload.price,
         stock_count=payload.stock_count, description=payload.description or payload.title,
         image_url=payload.image_url, seller_name=seller.name, seller_id=_seller_slug(seller),
         rating=0, total_reviews=0, is_verified_seller=True, semantic_tags="seller listing,verified seller",
@@ -212,10 +310,17 @@ def create_inventory(payload: InventoryInput, db: Session = Depends(get_db), sel
 @router.patch("/inventory/{product_id}")
 @router.put("/inventory/{product_id}")
 def update_inventory(product_id: str, payload: InventoryUpdate, db: Session = Depends(get_db), seller: User = Depends(get_current_active_seller)):
-    product = db.query(Product).filter(Product.id == product_id, Product.seller_name == seller.name).first()
+    product = db.query(Product).filter(Product.id == product_id, Product.seller_id == _seller_slug(seller)).first()
     if not product: raise HTTPException(status_code=404, detail="Inventory item not found")
     values = payload.model_dump(exclude_unset=True)
-    if "price" in values: product.base_price = values.pop("price")
+    next_price = values.pop("price", product.base_price)
+    next_floor = values.pop("seller_price_floor", product.seller_price_floor)
+    if "price" in payload.model_fields_set and "seller_price_floor" not in payload.model_fields_set and next_floor > next_price:
+        next_floor = next_price
+    if next_floor > next_price:
+        raise HTTPException(status_code=422, detail="Seller price floor cannot exceed the listing price")
+    product.base_price = next_price
+    product.seller_price_floor = next_floor
     if "status" in values: product.listing_status = values.pop("status")
     for key, value in values.items(): setattr(product, key, value)
     db.commit(); db.refresh(product)
@@ -224,7 +329,7 @@ def update_inventory(product_id: str, payload: InventoryUpdate, db: Session = De
 
 @router.delete("/inventory/{product_id}", status_code=204)
 def delete_inventory(product_id: str, db: Session = Depends(get_db), seller: User = Depends(get_current_active_seller)):
-    product = db.query(Product).filter(Product.id == product_id, Product.seller_name == seller.name).first()
+    product = db.query(Product).filter(Product.id == product_id, Product.seller_id == _seller_slug(seller)).first()
     if not product: raise HTTPException(status_code=404, detail="Inventory item not found")
     if db.query(Order).filter(Order.product_id == product.id).first():
         raise HTTPException(status_code=409, detail="Products with order history cannot be deleted; set stock to zero")
@@ -234,13 +339,13 @@ def delete_inventory(product_id: str, db: Session = Depends(get_db), seller: Use
 
 @router.get("/orders")
 def seller_orders(db: Session = Depends(get_db), seller: User = Depends(get_current_active_seller)):
-    orders = db.query(Order).join(Product).filter(Product.seller_name == seller.name).order_by(Order.created_at.desc()).all()
+    orders = db.query(Order).join(Product).filter(Product.seller_id == _seller_slug(seller)).order_by(Order.created_at.desc()).all()
     return [{"order_ref": o.order_ref, "product_name": o.product.title, "quantity": o.quantity, "total": o.price, "order_status": o.status.value, "escrow_status": "LOCKED" if o.escrow_status == "HELD" else o.escrow_status, "placed_at": o.created_at} for o in orders]
 
 
 @router.post("/orders/{order_ref}/dispatch")
 def dispatch(order_ref: str, db: Session = Depends(get_db), seller: User = Depends(get_current_active_seller)):
-    order = db.query(Order).join(Product).filter(Order.order_ref == order_ref, Product.seller_name == seller.name).with_for_update().first()
+    order = db.query(Order).join(Product).filter(Order.order_ref == order_ref, Product.seller_id == _seller_slug(seller)).with_for_update().first()
     if not order:
         raise HTTPException(status_code=404, detail="Seller order not found")
     dispatch_confirmed_order(db, order, f"seller:{seller.email}")
@@ -251,7 +356,7 @@ def dispatch(order_ref: str, db: Session = Depends(get_db), seller: User = Depen
 @router.get("/wallet")
 def seller_wallet(db: Session = Depends(get_db), seller: User = Depends(get_current_active_seller)):
     revenue = db.query(func.coalesce(func.sum(Order.price), 0.0)).join(Product).filter(
-        Product.seller_name == seller.name, Order.status.in_(["CONFIRMED", "SHIPPED", "DELIVERED"])
+        Product.seller_id == _seller_slug(seller), Order.status.in_(["CONFIRMED", "SHIPPED", "DELIVERED"])
     ).scalar()
     wallet = db.query(SellerWallet).filter(SellerWallet.seller_id == seller.id).first()
     ledger = db.query(SellerWalletEntry).filter(

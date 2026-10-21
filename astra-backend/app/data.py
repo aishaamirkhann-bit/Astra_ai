@@ -9,21 +9,25 @@ log = logging.getLogger("astra.data")
 
 
 def _image(keywords: str) -> str:
-    # Served by the Next.js frontend from public/images/products/.
+    # Keep fallback catalog images category-specific even if the database is
+    # reinitialized from this in-memory catalog at application startup.
     images = {
-        "smartphone,samsung": "/images/products/samsung-phone.jpg",
-        "laptop,lenovo": "/images/products/lenovo-laptop.jpg",
-        "headphones,sony": "/images/products/sony-headphones.jpg",
-        "smartwatch,applewatch": "/images/products/apple-watch.jpg",
-        "smartphone,xiaomi": "/images/products/xiaomi-phone.jpg",
-        "laptop,dell": "/images/products/lenovo-laptop.jpg",
-        "headphones,wireless": "/images/products/wireless-earbuds.jpg",
-        "earrings,goldjewelry": "/images/products/gold-earrings.jpg",
-        "embroidery,fabric": "/images/products/lawn-fabric.jpg",
-        "lipstick,cosmetics": "/images/products/lipstick-set.jpg",
-        "kitchenappliance": "/images/products/air-fryer.jpg",
+        "smartphone,samsung": "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=900&q=85",
+        "laptop,lenovo": "https://images.unsplash.com/photo-1496181133206-80ce9b88a853?auto=format&fit=crop&w=900&q=85",
+        "headphones,sony": "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=900&q=85",
+        "smartwatch,applewatch": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=900&q=85",
+        "smartphone,xiaomi": "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=900&q=85",
+        "laptop,dell": "https://images.unsplash.com/photo-1496181133206-80ce9b88a853?auto=format&fit=crop&w=900&q=85",
+        "headphones,wireless": "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=900&q=85",
+        "earrings,goldjewelry": "https://images.unsplash.com/photo-1617038220319-276d3cfab638?auto=format&fit=crop&w=900&q=85",
+        "embroidery,fabric": "https://images.unsplash.com/photo-1598033129183-c4f50c736f10?auto=format&fit=crop&w=900&q=85",
+        "dress,indigo": "https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&w=900&q=85",
+        "dress,ivory": "https://images.unsplash.com/photo-1595777457583-95e059d581b8?auto=format&fit=crop&w=900&q=85",
+        "dress,sapphire": "https://images.unsplash.com/photo-1566174053879-31528523f8ae?auto=format&fit=crop&w=900&q=85",
+        "lipstick,cosmetics": "https://images.unsplash.com/photo-1596462502278-27bfdc403348?auto=format&fit=crop&w=900&q=85",
+        "kitchenappliance": "https://images.unsplash.com/photo-1585515320310-259814833e62?auto=format&fit=crop&w=900&q=85",
     }
-    return images.get(keywords, "/images/products/fallback-tech.jpg")
+    return images.get(keywords, "https://images.unsplash.com/photo-1490481651871-ab68de25d43d?auto=format&fit=crop&w=900&q=85")
 
 
 # Replace this in-memory repository with a PostgreSQL/pgvector or Elasticsearch adapter.
@@ -218,6 +222,16 @@ HARDCODED_PRODUCTS: list[ProductModel] = [
 ]
 
 PRODUCTS: list[ProductModel] = HARDCODED_PRODUCTS
+
+_ORIGIN_COUNTRY_BY_PRODUCT = {
+    "samsung-galaxy-s25-ultra": "CN", "lenovo-ideapad-slim-5": "CN",
+    "sony-wh-1000xm5": "CN", "apple-watch-series-9": "CN",
+    "xiaomi-14-civi": "CN", "dell-xps-13": "CN", "anker-soundcore-q45": "CN",
+    "gold-plated-jhumka-earrings": "PK", "embroidered-lawn-3pc-suit": "PK",
+    "matte-liquid-lipstick-set": "AE", "air-fryer-digital-5l": "CN",
+}
+for _product in HARDCODED_PRODUCTS:
+    _product["origin_country"] = _ORIGIN_COUNTRY_BY_PRODUCT.get(_product["id"], "PK")
 
 if settings.REFRESH_PRODUCTS_ON_STARTUP:
     from app.services.product_providers import configure_catalog_defaults, get_live_catalog

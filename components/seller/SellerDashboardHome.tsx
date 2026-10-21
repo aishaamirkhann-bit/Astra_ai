@@ -5,6 +5,9 @@ import { useEffect, useState } from "react";
 import { ArrowUpRight, BadgeCheck, Box, PackageCheck, Plus, ShieldCheck, Sparkles, Store, TrendingUp } from "lucide-react";
 import { getSellerDashboardStats, type SellerDashboardStats } from "@/lib/api";
 import SellerInventoryForm from "@/components/seller/SellerInventoryForm";
+import SellerInsightsPanel from "@/components/seller/SellerInsightsPanel";
+import CodRiskPanel from "@/components/seller/CodRiskPanel";
+import SellerAIAssistant from "@/components/seller/SellerAIAssistant";
 
 const money = (value: number) => `Rs. ${Math.round(value).toLocaleString("en-PK")}`;
 
@@ -49,6 +52,9 @@ export default function SellerDashboardHome() {
             </Link>
             <Link href="/seller/astra-check" className="inline-flex items-center gap-2 rounded-xl border border-purple-200 bg-white/75 px-4 py-3 text-xs font-semibold text-violet-800 transition hover:bg-white">
               <ShieldCheck className="h-4 w-4" /> View Seller Rules
+            </Link>
+            <Link href="/seller/b2b" className="inline-flex items-center gap-2 rounded-xl border border-purple-200 bg-white/75 px-4 py-3 text-xs font-semibold text-violet-800 transition hover:bg-white">
+              <Store className="h-4 w-4" /> B2B Supplier Desk
             </Link>
           </div>
         </div>
@@ -110,6 +116,10 @@ export default function SellerDashboardHome() {
           </div>
         </article>
       </section>
+
+      <SellerInsightsPanel />
+      <CodRiskPanel />
+      <SellerAIAssistant />
 
       <section className="grid gap-4 xl:grid-cols-[1.3fr_0.7fr]">
         <article className="overflow-hidden rounded-2xl border border-purple-100/70 bg-white/75 shadow-sm backdrop-blur-md">

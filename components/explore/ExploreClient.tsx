@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import CategoryChips from "@/components/explore/CategoryChips";
 import SemanticFilters from "@/components/explore/SemanticFilters";
 import HybridResultsGrid, { type ExploreProduct } from "@/components/explore/HybridResultsGrid";
@@ -91,7 +91,7 @@ export default function ExploreClient({
     }
   };
 
-  const searchWithFile = async (file: File, queryType: "voice" | "image", textOverride?: string) => {
+  const searchWithFile = useCallback(async (file: File, queryType: "voice" | "image", textOverride?: string) => {
     setLoading(true);
     setError(null);
     const body = new FormData();
@@ -122,7 +122,7 @@ export default function ExploreClient({
     } finally {
       setLoading(false);
     }
-  };
+  }, [category, maxPrice, minPrice, query, semanticTags, sortBy]);
 
   useEffect(() => {
     const raw = window.sessionStorage.getItem("astra:image-search");
@@ -203,11 +203,12 @@ export default function ExploreClient({
       window.removeEventListener("astra:file-search", handleFileSearch);
       window.removeEventListener("astra:search-context", handleSearchContext);
     };
-  }, [category, minPrice, maxPrice, sortBy, semanticTags]);
+  }, [searchWithFile]);
 
   return (
     <>
       <SmartPrompt onSelect={(prompt) => { setBudgetMode(false); window.dispatchEvent(new CustomEvent("astra:search", { detail: { query: prompt, commit: true } })); }} onBudgetCheck={() => void checkBudget()} />
+      <p className="text-[10px] text-ink-500">Image matching analyzes visible product details to find similar active catalog listings. Results are suggestions only.</p>
       {typeof walletBalance === "number" && <p className="-mt-4 text-xs text-ink-500">Available Balance: <span className="font-semibold text-ink-100">Rs. {walletBalance.toLocaleString()}</span></p>}
       {searchContext && <div className="glass flex items-center gap-3 rounded-xl2 p-3"><div className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-lg bg-base-800">{searchContext.mode === "image" && searchContext.previewUrl ? <img src={searchContext.previewUrl} alt="Selected search" className="h-full w-full object-cover" /> : <Mic className="h-5 w-5 text-astra-cyan" />}</div><div className="min-w-0 flex-1"><p className="flex items-center gap-1.5 text-xs font-semibold text-ink-100">{searchContext.mode === "image" ? <ImageIcon className="h-3.5 w-3.5 text-astra-cyan" /> : <Mic className="h-3.5 w-3.5 text-astra-cyan" />}{searchContext.mode === "image" ? "Image search" : "Voice search"}</p><p className="mt-0.5 truncate text-[11px] text-ink-500">{searchContext.label}</p></div><button type="button" onClick={() => setSearchContext(null)} aria-label="Dismiss search context" className="text-ink-500 transition hover:text-ink-100"><X className="h-4 w-4" /></button></div>}
 

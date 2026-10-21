@@ -1,5 +1,10 @@
 """Strict-auth enforcement + new B2B adapter and audit-trail coverage."""
 
+from datetime import datetime, timedelta, timezone
+
+from app.core.database import SessionLocal
+from app.models.user import User
+
 PROTECTED_PATHS = [
     "/api/v1/home",
     "/api/v1/orders",
@@ -108,3 +113,29 @@ def test_wrong_otp_code_is_still_rejected(anonymous_client) -> None:
         "/api/v1/auth/verify-otp", json={"otp_token": otp_token, "code": "000000"}
     )
     assert rejected.status_code == 400
+
+
+def test_expired_otp_code_is_rejected_even_in_development(anonymous_client) -> None:
+    challenge = anonymous_client.post(
+        "/api/v1/auth/login", json={"email": "aisha@astra.ai", "password": "demo1234"}
+    )
+    assert challenge.status_code == 200
+    otp_token = challenge.json()["otp_token"]
+
+    with SessionLocal() as db:
+        user = db.query(User).filter(User.email == "aisha@astra.ai").one()
+        previous_expiry = user.otp_expires_at
+        user.otp_expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+        db.commit()
+
+    try:
+        rejected = anonymous_client.post(
+            "/api/v1/auth/verify-otp", json={"otp_token": otp_token, "code": "000000"}
+        )
+        assert rejected.status_code == 400
+        assert "expired" in rejected.json()["detail"].lower()
+    finally:
+        with SessionLocal() as db:
+            user = db.query(User).filter(User.email == "aisha@astra.ai").one()
+            user.otp_expires_at = previous_expiry
+            db.commit()

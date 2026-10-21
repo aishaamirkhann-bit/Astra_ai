@@ -4,11 +4,14 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, get_db
 from app.models.deal import MarketPriceHistory, SellerMetric
 from app.models.product import Product
+from app.models.trust import SellerVerification
 from app.models.user import User
 from app.schemas.product import BuyerReviewOut, ProductDetailOut, ProductOut
 from app.services.astra_agents import authenticity_extras
 from app.services.finance_engine import FinanceEngine
 from app.services.recommendation_engine import RecommendationEngine
+from app.services.outfit_stylist import build_outfit_recommendations
+from app.services.trust_detector import build_trust_assessment
 from app.utils.helpers import format_pkr
 
 router = APIRouter(prefix="/products", tags=["Products"])
@@ -27,6 +30,7 @@ def _to_product_out(product: Product, wallet) -> ProductOut:
         seller=product.seller_name,
         trust=product.trust_score,
         category=product.category,
+        origin_country=product.origin_country or "PK",
         image=product.image_url,
         description=product.description,
     )
@@ -42,6 +46,39 @@ def get_recommended_products(
     products = RecommendationEngine.get_recommended(db, limit=limit)
     wallet = current_user.wallet
     return [_to_product_out(p, wallet) for p in products]
+
+
+@router.get("/{slug}/outfit-recommendations")
+def get_outfit_recommendations(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Read-only fashion matching over active, in-stock catalogue listings."""
+    anchor = db.query(Product).filter(Product.id == slug, Product.listing_status == "active").first()
+    if not anchor:
+        raise HTTPException(status_code=404, detail="Product not found")
+    candidates = db.query(Product).filter(Product.listing_status == "active", Product.stock_count > 0).all()
+    return {"product_id": anchor.id, **build_outfit_recommendations(
+        anchor, candidates, current_user.preferred_language, current_user.country or "PK",
+    )}
+
+
+@router.get("/{slug}/trust-score")
+def get_product_trust_score(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return advisory trust metrics from persisted product/seller evidence."""
+    product = db.query(Product).filter(Product.id == slug, Product.listing_status == "active").first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    seller = db.query(SellerVerification).filter(SellerVerification.seller_id == product.seller_id).first()
+    seller_score = seller.trust_index if seller else product.trust
+    assessment = build_trust_assessment(reviews=[], photos=[], seller_score=seller_score,
+                                        seller_verified=bool(seller.business_identity_verified) if seller else bool(product.is_verified_seller))
+    return {"product_id": product.id, "product_name": product.title, **assessment}
 
 
 @router.get("/{slug}", response_model=ProductDetailOut)

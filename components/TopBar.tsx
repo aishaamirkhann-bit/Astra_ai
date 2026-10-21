@@ -3,28 +3,46 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Bell, Camera, Check, ChevronDown, Loader2, Mic, Search, ShoppingBag, Store, User } from "lucide-react";
+import { Bell, Camera, Check, ChevronDown, Loader2, MapPin, Mic, Search, ShoppingBag, Store, User } from "lucide-react";
 import MobileNav from "@/components/MobileNav";
 import ThemeToggle from "@/components/ThemeToggle";
 import { clearSession, storeAccountMode, storeSession, storeUserProfile } from "@/lib/auth";
-import { changeAccountRole, getCurrentUser, logoutUser, parseVoiceIntent } from "@/lib/api";
+import { changeAccountRole, getCurrentUser, getVoiceWebSocketUrl, logoutUser, parseVoiceIntent, updateRegionalPreferences } from "@/lib/api";
 import { useAccountMode } from "@/lib/useAccountMode";
 import { showToast } from "@/lib/toast";
 import type { LoginResponse } from "@/lib/types";
+import LocationModal from "@/components/auth/LocationLanguageModal";
+import { CURRENCY_OPTIONS, getCountry, getSavedCountry, isCountryCode, LANGUAGES_BY_COUNTRY, LANGUAGE_STORAGE_KEY, saveCountry, type CountryCode, type DisplayCurrency, type LanguageName } from "@/lib/region";
+import { useRegionalCurrency } from "@/lib/useRegionalCurrency";
+import { isARIntent } from "@/lib/arIntent";
+import { flushVoiceEvents, interruptVoiceOutput, parseVoiceEvent, sendVoiceTranscript } from "@/lib/voiceStream.mjs";
 
-const LANGUAGES = ["English", "Urdu", "Roman Urdu"] as const;
-const COPY = { English: ["Search products, brands, or categories", "Search in English"], Urdu: ["مصنوعات، برانڈز یا کیٹیگریز تلاش کریں", "اردو میں تلاش کریں"], "Roman Urdu": ["Product, brand ya category search karein", "Roman Urdu mein search karein"] } as const;
+const COPY = {
+  English: ["Search products, brands, or categories", "Search in English"],
+  Urdu: ["Ù…ØµÙ†ÙˆØ¹Ø§ØªØŒ Ø¨Ø±Ø§Ù†ÚˆØ² ÛŒØ§ Ú©ÛŒÙ¹ÛŒÚ¯Ø±ÛŒØ² ØªÙ„Ø§Ø´ Ú©Ø±ÛŒÚº", "Ø§Ø±Ø¯Ùˆ Ù…ÛŒÚº ØªÙ„Ø§Ø´ Ú©Ø±ÛŒÚº"],
+  "Roman Urdu": ["Product, brand ya category search karein", "Roman Urdu mein search karein"],
+  Punjabi: ["Product, brand ya shreni labho", "Punjabi vich search"],
+  Pashto: ["Ø¯ Ù…Ø­ØµÙˆÙ„Ø§ØªÙˆ Ø§Ùˆ Ø¨Ø±Ø§Ù†Ú‰ÙˆÙ†Ùˆ Ù„Ù¼ÙˆÙ†", "Ù¾Ù‡ Ù¾ÚšØªÙˆ Ú©Û Ù„Ù¼ÙˆÙ†"],
+  Sindhi: ["Ù¾Ø±Ø§ÚŠÚªÙ½ØŒ Ø¨Ø±Ø§Ù†ÚŠ ÙŠØ§ ÚªÙŠÙ½ÙŠÚ¯Ø±ÙŠ Ú³ÙˆÙ„ÙŠÙˆ", "Ø³Ù†ÚŒÙŠ Û¾ Ú³ÙˆÙ„Ø§"],
+} as const;
 const BUYER_PROFILE_LINKS = [["My Account", "/account"], ["Wallet & Ledger", "/wallet"], ["Orders & Receipts", "/orders"]] as const;
 const SELLER_PROFILE_LINKS = [["Seller Dashboard", "/seller/dashboard"], ["Inventory", "/seller/inventory"], ["Orders", "/seller/orders"], ["Seller Wallet", "/seller/wallet"]] as const;
-type Recognition = { lang: string; interimResults: boolean; continuous: boolean; start(): void; stop(): void; onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null; onend: (() => void) | null; onerror: (() => void) | null };
+type Recognition = { lang: string; interimResults: boolean; continuous: boolean; start(): void; stop(): void; onresult: ((event: { resultIndex: number; results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null; onend: (() => void) | null; onerror: (() => void) | null };
 
 export default function TopBar({ unreadNotifications = 0, user }: { unreadNotifications?: number; user?: LoginResponse["user"] }) {
   const router = useRouter();
   const pathname = usePathname();
+  const { currency, setCurrency } = useRegionalCurrency();
   const accountMode = useAccountMode();
   const profileLinks = accountMode === "seller" ? SELLER_PROFILE_LINKS : BUYER_PROFILE_LINKS;
   const recognition = useRef<Recognition | null>(null);
-  const [language, setLanguage] = useState<(typeof LANGUAGES)[number]>("Roman Urdu");
+  const voiceSocket = useRef<WebSocket | null>(null);
+  const pendingVoiceEvents = useRef<string[]>([]);
+  const voiceRecorder = useRef<MediaRecorder | null>(null);
+  const voiceMediaStream = useRef<MediaStream | null>(null);
+  const [region, setRegion] = useState<CountryCode | null>(null);
+  const [locationOpen, setLocationOpen] = useState(false);
+  const [language, setLanguage] = useState<LanguageName>("English");
   const [query, setQuery] = useState("");
   const [listening, setListening] = useState(false);
   const [status, setStatus] = useState("");
@@ -34,7 +52,42 @@ export default function TopBar({ unreadNotifications = 0, user }: { unreadNotifi
   const [profileUser, setProfileUser] = useState(user);
   const [switchingRole, setSwitchingRole] = useState<"buyer" | "seller" | null>(null);
 
+  const activeLanguages = LANGUAGES_BY_COUNTRY[region ?? "PK"];
+  const countryInfo = region ? getCountry(region) : null;
+  const searchCopy = COPY[language as keyof typeof COPY] ?? COPY.English;
+
+  useEffect(() => {
+    const storedCountry = getSavedCountry();
+    const savedCountry = storedCountry ?? (isCountryCode(user?.country ?? null) ? user!.country as CountryCode : null);
+    if (!savedCountry) {
+      setLocationOpen(true);
+      return;
+    }
+    if (!storedCountry) {
+      saveCountry(savedCountry);
+      setCurrency(getCountry(savedCountry).currency as DisplayCurrency);
+      // The profile may contain a migration/signup default. Ask once in this
+      // browser before treating that region as an acknowledged preference.
+      setLocationOpen(true);
+    }
+    setRegion(savedCountry);
+    const savedLanguage = window.localStorage.getItem(LANGUAGE_STORAGE_KEY) ?? user?.preferred_language ?? null;
+    const available = LANGUAGES_BY_COUNTRY[savedCountry];
+    setLanguage(available.some((option) => option.name === savedLanguage) ? savedLanguage as LanguageName : available[0].name as LanguageName);
+  }, [user, setCurrency]);
   useEffect(() => { try { setHistory(JSON.parse(localStorage.getItem("astra-search-history") ?? "[]")); } catch { setHistory([]); } }, []);
+
+  function chooseCountry(country: CountryCode, preferredLanguage: LanguageName = language) {
+    const available = LANGUAGES_BY_COUNTRY[country];
+    const nextLanguage = available.some((option) => option.name === preferredLanguage) ? preferredLanguage : "English";
+    setRegion(country);
+    setLanguage(nextLanguage);
+    saveCountry(country);
+    setCurrency(getCountry(country).currency as DisplayCurrency);
+    window.localStorage.setItem(LANGUAGE_STORAGE_KEY, nextLanguage);
+    void updateRegionalPreferences(country, nextLanguage).then((profile) => { setProfileUser(profile); storeUserProfile(profile); }).catch(() => undefined);
+    setLocationOpen(false);
+  }
   useEffect(() => {
     if (user) {
       setProfileUser(user);
@@ -47,6 +100,34 @@ export default function TopBar({ unreadNotifications = 0, user }: { unreadNotifi
     }
   }, [router, user]);
   useEffect(() => { const handler = (event: Event) => { const detail = (event as CustomEvent<{ query: string; commit?: boolean }>).detail; setQuery(detail.query); if (detail.commit && pathname !== "/explore") router.push(`/explore?q=${encodeURIComponent(detail.query)}`); }; addEventListener("astra:search", handler); return () => removeEventListener("astra:search", handler); }, [pathname, router]);
+  useEffect(() => () => {
+    voiceRecorder.current?.state !== "inactive" && voiceRecorder.current?.stop();
+    voiceMediaStream.current?.getTracks().forEach((track) => track.stop());
+    voiceSocket.current?.close();
+  }, []);
+
+  async function streamMicrophoneAudio(socket: WebSocket) {
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (socket.readyState !== WebSocket.OPEN) { stream.getTracks().forEach((track) => track.stop()); return; }
+      const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
+      const recorder = new MediaRecorder(stream, { mimeType: mime });
+      voiceMediaStream.current = stream;
+      voiceRecorder.current = recorder;
+      socket.send(JSON.stringify({ type: "audio_start", mime }));
+      recorder.ondataavailable = (event) => { if (event.data.size && socket.readyState === WebSocket.OPEN) socket.send(event.data); };
+      recorder.onstop = () => {
+        if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "audio_end" }));
+        stream.getTracks().forEach((track) => track.stop());
+        if (voiceRecorder.current === recorder) voiceRecorder.current = null;
+        if (voiceMediaStream.current === stream) voiceMediaStream.current = null;
+      };
+      recorder.start(250);
+    } catch {
+      setStatus("Live audio unavailable; using browser transcription");
+    }
+  }
 
   function search(value: string) {
     const clean = value.trim(); if (!clean) return;
@@ -65,22 +146,72 @@ export default function TopBar({ unreadNotifications = 0, user }: { unreadNotifi
     const speechWindow = window as Window & { SpeechRecognition?: new () => Recognition; webkitSpeechRecognition?: new () => Recognition };
     const Constructor = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
     if (!Constructor) { setStatus("Use Chrome or Edge for voice search"); return; }
-    const engine = new Constructor(); engine.lang = language === "Urdu" ? "ur-PK" : "en-US"; engine.interimResults = false; engine.continuous = false;
+    const engine = new Constructor(); engine.lang = activeLanguages.find((option) => option.name === language)?.locale ?? "en-US"; engine.interimResults = true; engine.continuous = false;
+    if (window.speechSynthesis?.speaking) {
+      interruptVoiceOutput(voiceSocket.current, window.speechSynthesis);
+    }
+    voiceSocket.current?.close();
+    pendingVoiceEvents.current = [];
+    const socket = new WebSocket(getVoiceWebSocketUrl());
+    voiceSocket.current = socket;
+    socket.onopen = () => {
+      flushVoiceEvents(socket, pendingVoiceEvents.current);
+      void streamMicrophoneAudio(socket);
+    };
+    socket.onmessage = (message) => {
+      try {
+        const event = parseVoiceEvent(message.data) as { type?: string; mode?: string; text?: string; final?: boolean; intent?: { category?: string | null; budget_max?: number | null }; assistant_suggestion?: string | null } | null;
+        if (!event) return;
+        if (event.type === "transcript" && event.final && event.intent) {
+          const bits = [event.intent.category, event.intent.budget_max ? `â‰¤ Rs. ${event.intent.budget_max.toLocaleString()}` : ""].filter(Boolean).join(" Â· ");
+          setStatus(event.assistant_suggestion || `Streaming NLU${bits ? ` Â· ${bits}` : ""}`);
+        } else if (event.type === "interrupted") setStatus("Voice output interrupted");
+      } catch { /* Ignore malformed stream events and keep browser recognition responsive. */ }
+    };
+    socket.onclose = () => { if (voiceSocket.current === socket) voiceSocket.current = null; };
     engine.onresult = (event) => {
-      const text = event.results[0][0].transcript; setQuery(text);
-      void parseVoiceIntent(text).then((intent) => {
-        if (intent.intent === "buy" && intent.matched_product) {
-          const bits = [intent.action?.label, intent.category, intent.budget ? `≤ Rs. ${intent.budget.toLocaleString()}` : ""].filter(Boolean).join(" · ");
-          setStatus(`ASTRA Intent: Buy · ${bits || "matched"}`);
-          router.push(`/product/${intent.matched_product.id}?autobuy=1`);
-        } else { search(text); }
+      let interim = "";
+      let finalText = "";
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const result = event.results[index];
+        const text = result[0].transcript;
+        if ((result as unknown as { isFinal?: boolean }).isFinal) finalText += text;
+        else interim += text;
+      }
+      const text = (finalText || interim).trim();
+      if (text) sendVoiceTranscript(socket, pendingVoiceEvents.current, text, Boolean(finalText));
+      if (!text || !finalText) return;
+      setQuery(text);
+      if (isARIntent(text)) {
+        if (pathname.startsWith("/product/")) {
+          setStatus("Opening read-only AR preview");
+          window.dispatchEvent(new CustomEvent("astra:ar-intent"));
+        } else {
+          setStatus("Open a product page to preview it in AR");
+        }
+        return;
+      }
+      const voiceLocale = activeLanguages.find((option) => option.name === language)?.locale ?? "en-US";
+      void parseVoiceIntent(text, undefined, voiceLocale, region ?? getSavedCountry() ?? "PK").then((intent) => {
+        const bits = [intent.category, intent.budget ? `â‰¤ Rs. ${intent.budget.toLocaleString()}` : ""].filter(Boolean).join(" Â· ");
+        setStatus(`ASTRA Intent: Search${bits ? ` Â· ${bits}` : ""}`);
+        if (intent.cross_border_advisory?.message) setStatus(intent.cross_border_advisory.message);
+        search(text);
       }).catch(() => search(text));
     };
-    engine.onend = () => { setListening(false); recognition.current = null; }; engine.onerror = () => { setListening(false); setStatus("Voice search could not hear that. Try again."); };
-    recognition.current = engine; setListening(true); setStatus("Listening…"); try { engine.start(); } catch { setListening(false); setStatus("Microphone is busy. Try again."); }
+    const stopAudioStream = () => {
+      if (voiceRecorder.current?.state === "recording") voiceRecorder.current.stop();
+    };
+    engine.onend = () => { setListening(false); recognition.current = null; stopAudioStream(); };
+    engine.onerror = () => { setListening(false); setStatus("Voice search could not hear that. Try again."); stopAudioStream(); };
+    recognition.current = engine; setListening(true); setStatus("Listeningâ€¦"); try { engine.start(); } catch { setListening(false); setStatus("Microphone is busy. Try again."); }
   }
   function image(file: File) {
-    setStatus(`Preparing ${file.name}…`);
+    if (!new Set(["image/jpeg", "image/png", "image/webp"]).has(file.type) || file.size > 5 * 1024 * 1024) {
+      setStatus("Choose a JPEG, PNG, or WebP image up to 5 MB");
+      return;
+    }
+    setStatus(`Preparing ${file.name}â€¦`);
     if (accountMode === "seller") {
       setStatus(`Seller search ready for ${file.name}`);
       return;
@@ -122,8 +253,8 @@ export default function TopBar({ unreadNotifications = 0, user }: { unreadNotifi
               onFocus={() => setHistoryOpen(true)}
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={(event) => event.key === "Enter" && search(query)}
-              placeholder={accountMode === "seller" ? "Search Listings, Orders, Barcodes, or Inventory..." : COPY[language][0]}
-              aria-label={accountMode === "seller" ? "Search Listings, Orders, Barcodes, or Inventory" : COPY[language][1]}
+              placeholder={accountMode === "seller" ? "Search Listings, Orders, Barcodes, or Inventory..." : searchCopy[0]}
+              aria-label={accountMode === "seller" ? "Search Listings, Orders, Barcodes, or Inventory" : searchCopy[1]}
               className="w-full bg-transparent text-sm text-ink-100 placeholder:text-ink-500 focus:outline-none"
             />
             {historyOpen && history.length > 0 && (
@@ -159,22 +290,34 @@ export default function TopBar({ unreadNotifications = 0, user }: { unreadNotifi
               </button>
               <label className="grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-full bg-base-700 text-ink-300" aria-label="Image search">
                 <Camera className="h-4 w-4" />
-                <input type="file" accept="image/*" className="hidden" onChange={(event) => event.target.files?.[0] && image(event.target.files[0])} />
+                <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(event) => event.target.files?.[0] && image(event.target.files[0])} />
               </label>
             </>
           )}
         </div>
-        <div className="hidden gap-1 xl:flex">
-          {LANGUAGES.map((item) => (
-            <button
-              key={item}
-              onClick={() => setLanguage(item)}
-              className={`rounded-full px-3 py-1.5 text-xs ${language === item ? "bg-astra-gradient-soft text-ink-100" : "text-ink-500"}`}
-            >
-              {item}
-            </button>
-          ))}
-        </div>
+        <button type="button" onClick={() => setLocationOpen(true)} aria-label="Change country or region" className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-base-600 bg-base-800 px-2 py-2 text-[10px] font-semibold text-ink-200 hover:border-astra-cyan/50 sm:px-2.5">
+          <MapPin className="h-3.5 w-3.5 text-astra-cyan" />
+          <span>{countryInfo?.code ?? "Region"}</span>
+          {countryInfo && <span className="hidden text-ink-500 sm:inline">{countryInfo.currency}</span>}
+          <ChevronDown className="h-3 w-3 text-ink-500" />
+        </button>
+        <label className="shrink-0 rounded-xl border border-base-600 bg-base-800 px-2 py-1.5 text-ink-100">
+          <span className="sr-only">Display currency</span>
+          <select aria-label="Display currency" value={currency} onChange={(event) => setCurrency(event.target.value as DisplayCurrency)} className="max-w-[72px] bg-transparent text-[10px] font-medium outline-none">
+            {CURRENCY_OPTIONS.map((option) => <option key={option} value={option} className="bg-base-900">{option}</option>)}
+          </select>
+        </label>
+        <label className="shrink-0 rounded-xl border border-base-600 bg-base-800 px-2 py-1.5 text-ink-100">
+          <span className="sr-only">Interface and voice language</span>
+          <select
+            aria-label="Interface and voice language"
+            value={language}
+            onChange={(event) => { const next = event.target.value as LanguageName; setLanguage(next); window.localStorage.setItem(LANGUAGE_STORAGE_KEY, next); if (region) void updateRegionalPreferences(region, next).then((profile) => { setProfileUser(profile); storeUserProfile(profile); }).catch(() => undefined); }}
+            className="max-w-[150px] bg-transparent text-[11px] font-medium outline-none"
+          >
+            {activeLanguages.map((item) => <option key={item.name} value={item.name} className="bg-base-900">{item.label}</option>)}
+          </select>
+        </label>
       </div>
       <div className="flex items-center justify-between gap-3 lg:justify-end">
         {accountMode === "seller" && (
@@ -273,6 +416,7 @@ export default function TopBar({ unreadNotifications = 0, user }: { unreadNotifi
           )}
         </div>
       </div>
+      <LocationModal open={locationOpen} required={!region} selectedCountry={region} selectedLanguage={language} onSelect={chooseCountry} onClose={() => setLocationOpen(false)} />
     </header>
   );
 }

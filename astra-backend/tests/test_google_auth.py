@@ -163,6 +163,7 @@ def test_google_callback_rejects_state_not_bound_to_browser(monkeypatch) -> None
 def test_google_start_returns_user_to_login_when_not_configured(monkeypatch) -> None:
     monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "")
     monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", "")
+    monkeypatch.setattr(settings, "APP_ENV", "production")
 
     with TestClient(app, follow_redirects=False) as client:
         response = client.get("/api/v1/auth/google/start")

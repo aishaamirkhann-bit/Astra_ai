@@ -18,11 +18,15 @@ from app.api.v1.endpoints import (
     checkout,
     chat,
     b2b,
+    b2b_workflows,
     messaging,
     negotiation,
     seller,
     payments,
     voice,
+    cod_risk,
+    whatsapp_webhook,
+    spatial_decorator,
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -44,8 +48,14 @@ api_router.include_router(cart.router)
 api_router.include_router(checkout.router)
 api_router.include_router(chat.router)
 api_router.include_router(b2b.router)
+api_router.include_router(b2b_workflows.b2b_router)
+api_router.include_router(b2b_workflows.distribution_router)
+api_router.include_router(b2b_workflows.subscriptions_router)
 api_router.include_router(messaging.router)
 api_router.include_router(negotiation.router)
 api_router.include_router(seller.router)
 api_router.include_router(payments.router)
 api_router.include_router(voice.router)
+api_router.include_router(cod_risk.router)
+api_router.include_router(whatsapp_webhook.router)
+api_router.include_router(spatial_decorator.router)

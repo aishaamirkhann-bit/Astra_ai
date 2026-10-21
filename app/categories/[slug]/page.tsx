@@ -5,9 +5,10 @@ import { getCategories } from "@/lib/api";
 
 export const dynamicParams = true;
 
-export default async function CategoryPage({ params }: { params: { slug: string } }) {
+export default async function CategoryPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
   const categories = await getCategories().catch(() => []);
-  const category = categories.find((item) => item.slug === params.slug);
+  const category = categories.find((item) => item.slug === slug);
   if (!category) return notFound();
 
   return (

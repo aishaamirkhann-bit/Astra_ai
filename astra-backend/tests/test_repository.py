@@ -7,6 +7,7 @@ from app.repository import ProductRepository
 def test_repository_seeds_and_reads_products(tmp_path: Path) -> None:
     repository = ProductRepository(tmp_path / "catalog.db")
 
+    repository.initialize()
     products = repository.list_products()
     expected_product = PRODUCTS[0]
     product = repository.get_product(expected_product["id"])
@@ -20,7 +21,7 @@ def test_repository_seeds_and_reads_products(tmp_path: Path) -> None:
 def test_repository_keeps_existing_catalog_without_duplicate_seeds(tmp_path: Path) -> None:
     repository = ProductRepository(tmp_path / "catalog.db")
 
-    repository.list_products()
+    repository.initialize()
     repository.list_products()
 
     with repository._connect() as connection:

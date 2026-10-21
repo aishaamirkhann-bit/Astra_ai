@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -7,6 +9,7 @@ class ProductSchema(BaseModel):
     id: str
     title: str
     category: str
+    origin_country: Literal["PK", "CN", "IR", "AE"] = "PK"
     price: float
     formatted_price: str
     rating: float = Field(ge=0, le=5)
@@ -17,6 +20,9 @@ class ProductSchema(BaseModel):
     image_url: str
     semantic_tags: list[str]
     trust: int = Field(ge=0, le=100)
+    availability: Literal["in_stock", "out_of_stock", "unavailable", "unknown"] = "unknown"
+    stock_count: int | None = Field(default=None, ge=0)
+    match_reasons: list[str] = Field(default_factory=list)
 
 
 class ProductDetailSchema(ProductSchema):

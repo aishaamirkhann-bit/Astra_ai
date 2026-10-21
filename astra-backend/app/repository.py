@@ -1,6 +1,7 @@
 import json
 import os
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -27,7 +28,8 @@ DATABASE_URL = (
 CATEGORY_NAMES = [
     "Mobiles", "Laptops & Computers", "Audio & Wearables", "Wearables", "Accessories",
     "Electronics & Accessories", "Jewelry", "Clothing & Fashion", "Dresses & Fashion",
-    "Makeup & Beauty", "Home Appliances", "Home & Living", "Furniture", "Wallpapers",
+    "Electronics & Computing", "Makeup & Beauty", "Home Appliances", "Home & Living",
+    "Home Decor", "Furniture", "Wallpapers",
 ]
 
 
@@ -49,6 +51,52 @@ class ProductRepository:
         connection.row_factory = sqlite3.Row
         return connection
 
+    @contextmanager
+    def _connect_readonly(self):
+        """Open the existing catalogue without creating files or tables."""
+        if self.database_url:
+            connection = self._connect()
+            try:
+                connection.execute("SET TRANSACTION READ ONLY")
+                yield connection
+            finally:
+                connection.close()
+            return
+        if not self.database_path.is_file():
+            yield None
+            return
+        uri = f"{self.database_path.resolve().as_uri()}?mode=ro"
+        connection = sqlite3.connect(uri, uri=True)
+        connection.row_factory = sqlite3.Row
+        try:
+            yield connection
+        finally:
+            connection.close()
+
+    def _table_columns(self, connection: Any, table_name: str) -> set[str]:
+        if self.database_url:
+            rows = connection.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema = current_schema() AND table_name = %s",
+                (table_name,),
+            ).fetchall()
+            return {row["column_name"] for row in rows}
+        rows = connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+        return {row["name"] for row in rows}
+
+    def _table_exists(self, connection: Any, table_name: str) -> bool:
+        return bool(self._table_columns(connection, table_name))
+
+    @staticmethod
+    def _visible(product: dict[str, Any]) -> bool:
+        listing_status = product.get("listing_status")
+        stock_count = product.get("stock_count")
+        if listing_status is not None and str(listing_status).lower() != "active":
+            return False
+        if stock_count is not None and int(stock_count) <= 0:
+            return False
+        return True
+
     def initialize(self) -> None:
         with self._connect() as connection:
             self._initialize_categories(connection)
@@ -58,6 +106,7 @@ class ProductRepository:
                     CREATE TABLE IF NOT EXISTS products (
                         id TEXT PRIMARY KEY, title TEXT NOT NULL, category TEXT NOT NULL,
                         category_id TEXT REFERENCES categories(id),
+                        origin_country TEXT NOT NULL DEFAULT 'PK',
                         price DOUBLE PRECISION NOT NULL, rating DOUBLE PRECISION NOT NULL,
                         total_reviews INTEGER NOT NULL, seller_name TEXT NOT NULL,
                         is_verified_seller BOOLEAN NOT NULL, badge TEXT, image_url TEXT NOT NULL,
@@ -67,6 +116,7 @@ class ProductRepository:
                     """
                 )
                 self._ensure_product_category_column(connection, "%s")
+                self._ensure_product_origin_column(connection)
                 self._migrate_legacy_categories(connection, "%s")
                 with connection.cursor() as cursor:
                     cursor.executemany(
@@ -74,8 +124,8 @@ class ProductRepository:
                         INSERT INTO products (
                             id, title, category, price, rating, total_reviews, seller_name,
                             is_verified_seller, badge, image_url, semantic_tags, description,
-                            fit, trust, search_terms
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            fit, trust, search_terms, origin_country
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (id) DO UPDATE SET
                             title = EXCLUDED.title,
                             category = EXCLUDED.category,
@@ -90,11 +140,13 @@ class ProductRepository:
                             description = EXCLUDED.description,
                             fit = EXCLUDED.fit,
                             trust = EXCLUDED.trust,
-                            search_terms = EXCLUDED.search_terms
+                            search_terms = EXCLUDED.search_terms,
+                            origin_country = EXCLUDED.origin_country
                         """,
                         self._seed_rows(),
                     )
                 self._refresh_image_urls(connection, "%s")
+                self._refresh_origin_countries(connection, "%s")
                 self._refresh_seed_metadata(connection, "%s")
                 connection.execute("CREATE INDEX IF NOT EXISTS idx_products_category_id ON products(category_id)")
                 connection.execute("CREATE INDEX IF NOT EXISTS idx_products_price ON products(price)")
@@ -105,6 +157,7 @@ class ProductRepository:
                     id TEXT PRIMARY KEY,
                     title TEXT NOT NULL,
                     category TEXT NOT NULL,
+                    origin_country TEXT NOT NULL DEFAULT 'PK',
                     price REAL NOT NULL,
                     rating REAL NOT NULL,
                     total_reviews INTEGER NOT NULL,
@@ -121,14 +174,15 @@ class ProductRepository:
                 """
             )
             self._ensure_product_category_column(connection, "?")
+            self._ensure_product_origin_column(connection)
             self._migrate_legacy_categories(connection, "?")
             connection.executemany(
                 """
                 INSERT INTO products (
                     id, title, category, price, rating, total_reviews,
                     seller_name, is_verified_seller, badge, image_url,
-                    semantic_tags, description, fit, trust, search_terms
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    semantic_tags, description, fit, trust, search_terms, origin_country
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     title = excluded.title,
                     category = excluded.category,
@@ -143,11 +197,13 @@ class ProductRepository:
                     description = excluded.description,
                     fit = excluded.fit,
                     trust = excluded.trust,
-                    search_terms = excluded.search_terms
+                    search_terms = excluded.search_terms,
+                    origin_country = excluded.origin_country
                 """,
                 self._seed_rows(),
             )
             self._refresh_image_urls(connection, "?")
+            self._refresh_origin_countries(connection, "?")
             self._refresh_seed_metadata(connection, "?")
             connection.execute("CREATE INDEX IF NOT EXISTS idx_products_category_id ON products(category_id)")
             connection.execute("CREATE INDEX IF NOT EXISTS idx_products_price ON products(price)")
@@ -185,6 +241,23 @@ class ProductRepository:
                 cursor.executemany(update_sql, rows)
         else:
             connection.executemany(update_sql, rows)
+
+    def _ensure_product_origin_column(self, connection: Any) -> None:
+        if self.database_url:
+            connection.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS origin_country TEXT NOT NULL DEFAULT 'PK'")
+        else:
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(products)").fetchall()}
+            if "origin_country" not in columns:
+                connection.execute("ALTER TABLE products ADD COLUMN origin_country TEXT NOT NULL DEFAULT 'PK'")
+
+    def _refresh_origin_countries(self, connection: Any, placeholder: str) -> None:
+        update_sql = f"UPDATE products SET origin_country = {placeholder} WHERE id = {placeholder}"
+        origin_rows = [(product.get("origin_country", "PK"), product["id"]) for product in PRODUCTS]
+        if placeholder == "%s":
+            with connection.cursor() as cursor:
+                cursor.executemany(update_sql, origin_rows)
+        else:
+            connection.executemany(update_sql, origin_rows)
 
     def _migrate_legacy_categories(self, connection: Any, placeholder: str) -> None:
         legacy_name = "Households"
@@ -244,7 +317,7 @@ class ProductRepository:
                 product["rating"], product["total_reviews"], product["seller_name"],
                 bool(product["is_verified_seller"]), product["badge"], product["image_url"],
                 json.dumps(product["semantic_tags"]), product["description"], product["fit"],
-                product["trust"], product["search_terms"],
+                product["trust"], product["search_terms"], product.get("origin_country", "PK"),
             )
             for product in PRODUCTS
         ]
@@ -254,45 +327,56 @@ class ProductRepository:
         product = dict(row)
         product["is_verified_seller"] = bool(product["is_verified_seller"])
         product["semantic_tags"] = json.loads(product["semantic_tags"])
+        stock_count = product.get("stock_count")
+        listing_status = product.get("listing_status")
+        product["stock_count"] = int(stock_count) if stock_count is not None else None
+        product["availability"] = (
+            "unavailable" if listing_status is not None and str(listing_status).lower() != "active"
+            else "out_of_stock" if stock_count is not None and int(stock_count) <= 0
+            else "in_stock" if listing_status is not None and str(listing_status).lower() == "active" and stock_count is not None
+            else "unknown"
+        )
         return product
 
     def list_products(self) -> list[dict[str, Any]]:
-        self.initialize()
-        with self._connect() as connection:
+        with self._connect_readonly() as connection:
+            if connection is None or not self._table_exists(connection, "products"):
+                return []
             rows = connection.execute("SELECT * FROM products").fetchall()
-        products = [self._deserialize(row) for row in rows]
+        products = [product for product in map(self._deserialize, rows) if self._visible(product)]
         catalog_order = {product["id"]: index for index, product in enumerate(PRODUCTS)}
         return sorted(products, key=lambda product: catalog_order.get(product["id"], len(catalog_order)))
 
     def get_product(self, product_id: str) -> dict[str, Any] | None:
-        self.initialize()
-        with self._connect() as connection:
+        with self._connect_readonly() as connection:
+            if connection is None or not self._table_exists(connection, "products"):
+                return None
             placeholder = "%s" if self.database_url else "?"
             row = connection.execute(f"SELECT * FROM products WHERE id = {placeholder}", (product_id,)).fetchone()
         return self._deserialize(row) if row else None
 
     def list_categories(self) -> list[dict[str, Any]]:
-        self.initialize()
-        with self._connect() as connection:
-            if self.database_url:
-                rows = connection.execute(
-                    "SELECT c.id, c.name, c.slug, COUNT(p.id) AS product_count "
-                    "FROM categories c LEFT JOIN products p ON p.category_id = c.id "
-                    "GROUP BY c.id, c.name, c.slug ORDER BY c.name"
-                ).fetchall()
-            else:
-                rows = connection.execute(
-                    "SELECT c.id, c.name, c.slug, COUNT(p.id) AS product_count "
-                    "FROM categories c LEFT JOIN products p ON p.category_id = c.id "
-                    "GROUP BY c.id, c.name, c.slug ORDER BY c.name"
-                ).fetchall()
+        with self._connect_readonly() as connection:
+            if connection is None or not self._table_exists(connection, "categories") or not self._table_exists(connection, "products"):
+                return []
+            product_columns = self._table_columns(connection, "products")
+            visibility = []
+            if "listing_status" in product_columns:
+                visibility.append("p.listing_status = 'active'")
+            if "stock_count" in product_columns:
+                visibility.append("p.stock_count > 0")
+            join = "p.category_id = c.id" + (" AND " + " AND ".join(visibility) if visibility else "")
+            rows = connection.execute(
+                "SELECT c.id, c.name, c.slug, COUNT(p.id) AS product_count "
+                f"FROM categories c LEFT JOIN products p ON {join} "
+                "GROUP BY c.id, c.name, c.slug ORDER BY c.name"
+            ).fetchall()
         return [dict(row) for row in rows]
 
     def list_category_products(
         self, category_slug: str, min_price: float, max_price: float, page: int, limit: int, sort_by: str,
         verified_only: bool = False, min_rating: float = 0,
     ) -> tuple[list[dict[str, Any]], int]:
-        self.initialize()
         placeholder = "%s" if self.database_url else "?"
         order_by = {"price_low_high": "p.price ASC", "price_high_low": "p.price DESC", "rating": "p.rating DESC"}.get(sort_by, "p.rating DESC")
         filters = [f"c.slug = {placeholder}", f"p.price BETWEEN {placeholder} AND {placeholder}", f"p.rating >= {placeholder}"]
@@ -301,7 +385,15 @@ class ProductRepository:
             filters.append("p.is_verified_seller = TRUE" if self.database_url else "p.is_verified_seller = 1")
         where_clause = " AND ".join(filters)
         offset = (page - 1) * limit
-        with self._connect() as connection:
+        with self._connect_readonly() as connection:
+            if connection is None or not self._table_exists(connection, "products") or not self._table_exists(connection, "categories"):
+                return [], 0
+            columns = self._table_columns(connection, "products")
+            if "listing_status" in columns:
+                filters.append("p.listing_status = 'active'")
+            if "stock_count" in columns:
+                filters.append("p.stock_count > 0")
+            where_clause = " AND ".join(filters)
             count_sql = (
                 f"SELECT COUNT(*) AS total FROM products p JOIN categories c ON c.id = p.category_id "
                 f"WHERE {where_clause}"

@@ -15,6 +15,7 @@ CheckoutSessionStatus = Literal[
 
 class CheckoutSessionCreateRequest(BaseModel):
     shipping_address: str = Field(min_length=8, max_length=500)
+    negotiation_session_id: int | None = Field(default=None, ge=1)
 
 
 class CheckoutSessionConfirmRequest(BaseModel):

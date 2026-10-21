@@ -2,15 +2,14 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { ShieldCheck, Mail, Loader2, ArrowRight } from "lucide-react";
 import { loginUser } from "@/lib/api";
 import { storePendingOtp, storePostAuthRedirect } from "@/lib/auth";
 import PasswordInput from "@/components/auth/PasswordInput";
 import ForgotPasswordModal from "@/components/auth/ForgotPasswordModal";
+import { getSavedCountry } from "@/lib/region";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -43,7 +42,9 @@ export default function LoginPage() {
       storePendingOtp(otpChallenge);
       const next = new URLSearchParams(window.location.search).get("next");
       if (next) storePostAuthRedirect(next);
-      router.push("/verify-otp");
+      // Force a document navigation after persisting the OTP challenge so the
+      // verification page always reads it from the same-origin sessionStorage.
+      window.location.assign("/verify-otp");
     } catch (requestError) {
       setError((requestError as Error).message || "Invalid email or password. Try again.");
     } finally {
@@ -130,14 +131,15 @@ export default function LoginPage() {
                 setError(null);
                 setGoogleLoading(true);
                 const apiUrl = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/api\/v1\/?$/, "");
-                const url = `${apiUrl}/api/v1/auth/google/start`;
-                window.location.assign(url);
+                const params = new URLSearchParams({ role: "buyer", country: getSavedCountry() ?? "PK" });
+                window.location.assign(`${apiUrl}/api/v1/auth/google/start?${params.toString()}`);
               }}
               className="flex items-center justify-center gap-2 rounded-xl border border-base-600 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <span className="grid h-5 w-5 place-items-center rounded-full bg-slate-800 text-xs font-bold text-white">G</span>
               {googleLoading ? "Redirecting…" : "Continue with Google"}
             </button>
+            <p className="text-center text-[10px] text-ink-500">Without OAuth keys, development opens a clearly marked local demo account.</p>
           </div>
         </form>
 

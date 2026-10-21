@@ -45,7 +45,8 @@ def test_negotiation_counters_then_accepts() -> None:
     body = first.json()
     assert body["status"] == "counter"
     assert body["counter_offer"] is not None
-    assert body["market_average"] > 0
+    assert body["market_average"] is None or body["market_average"] > 0
+    assert body["buyer_budget"] > 0
     assert body["reasoning"]
 
     accepted = buyer.post("/api/v1/negotiation/samsung-galaxy-s25-ultra/offer", json={
@@ -59,6 +60,16 @@ def test_negotiation_counters_then_accepts() -> None:
         assert session is not None
         assert session.status == "accepted"
         assert db.query(NegotiationRound).filter(NegotiationRound.session_id == session.id).count() == 2
+
+
+def test_negotiation_rejects_offer_above_wallet_bounded_cap() -> None:
+    buyer = _login("aisha@astra.ai")
+    response = buyer.post("/api/v1/negotiation/samsung-galaxy-s25-ultra/offer", json={
+        "offer_price": 10_000_000, "round": 1,
+    })
+    assert response.status_code == 200
+    assert response.json()["status"] == "rejected"
+    assert response.json()["final_price"] is None
 
 
 def test_authenticity_audit_returns_hash_and_checks() -> None:

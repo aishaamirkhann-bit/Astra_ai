@@ -1,396 +1,397 @@
-<div align="center">
+# Astra AI
 
-# ASTRA AI
-### The Trust & Financial-Consent Layer for Agentic Commerce
+**A multilingual commerce copilot with explicit buyer consent at the point of purchase.**
 
-**"Shop Smarter. Spend Safer."**
+Astra AI is a Next.js and FastAPI commerce application for buyers and sellers in Pakistan and selected cross-border markets. It combines a catalogue, search and recommendations, product and order workflows, seller tools, optional AI-provider integrations, and a server-authoritative checkout flow. Its intended mission is to make product discovery more accessible while keeping purchase authorization under the buyer's control.
 
-Built for the **Alibaba Cloud AI Hackathon Pakistan 2026**
-*Alkhidmat Foundation Pakistan × Bano Qabil Platform — AI for Pakistan's Future*
+> **Implementation note:** This README describes the code currently in this repository. Several interfaces are prototypes, deterministic simulations, provider-dependent integrations, or English-first UI. In particular, this repository does not establish production-grade ML quality, a measured sub-500ms voice SLA, a live international settlement corridor, or complete native translation of every screen.
 
-[![Backend Tests](https://img.shields.io/badge/backend%20tests-104%2F104%20passing-brightgreen)](#testing--quality)
-[![E2E Suite](https://img.shields.io/badge/e2e%20suite-9%20scenarios-blue)](#testing--quality)
-[![CI](https://img.shields.io/badge/CI-4%20jobs%20configured-brightgreen)](#testing--quality)
-[![Next.js](https://img.shields.io/badge/Next.js-14.2-black?logo=next.js)](#tech-stack)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi)](#tech-stack)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18-336791?logo=postgresql)](#tech-stack)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.5-3178C6?logo=typescript)](#tech-stack)
-[![License](https://img.shields.io/badge/license-MIT-blue)](#license)
+## Contents
 
-[Live Demo](#) · [Video Walkthrough](https://www.loom.com/share/85dce7a635b249a18f1b34f0a251a5ae) · [Report a Bug](../../issues) · [Request a Feature](../../issues)
+- [At a glance](#at-a-glance)
+- [Architecture and repository map](#architecture-and-repository-map)
+- [Feature and language status](#feature-and-language-status)
+- [Buyer experience](#buyer-experience)
+- [Seller workspace](#seller-workspace)
+- [AI and decision-support services](#ai-and-decision-support-services)
+- [Financial architecture and safeguards](#financial-architecture-and-safeguards)
+- [API and realtime surface](#api-and-realtime-surface)
+- [Configuration and local development](#configuration-and-local-development)
+- [Verification status](#verification-status)
+- [Known limitations and production work](#known-limitations-and-production-work)
 
-</div>
+## At a glance
 
----
-
-## Table of Contents
-
-- [The Problem](#the-problem)
-- [The Solution](#the-solution)
-- [Platform at a Glance](#platform-at-a-glance)
-- [Core Features](#core-features)
-- [Why ASTRA Wins](#why-astra-wins)
-- [Tech Stack](#tech-stack)
-- [Architecture](#architecture)
-- [Project Structure](#project-structure)
-- [Getting Started](#getting-started)
-- [For Judges — Demo Access Notes](#for-judges--demo-access-notes)
-- [Testing & Quality](#testing--quality)
-- [API Overview](#api-overview)
-- [Screenshots](#screenshots)
-- [Roadmap](#roadmap)
-- [Security](#security)
-- [Team](#team)
-- [License](#license)
-
----
-
-## The Problem
-
-AI agents are starting to shop, negotiate, and check out on our behalf — but agentic commerce today has **no trust layer**. That gap shows up in four places:
-
-- **Counterfeit & synthetic-media fraud** — listings have no way to prove they're genuine.
-- **Opaque pricing** — buyers in emerging, PKR-denominated markets have no autonomous agent negotiating fairly for them.
-- **Slow disputes** — resolution takes days to weeks, with buyer funds locked in escrow and no transparent reasoning.
-- **Budget blindness** — nothing stops an AI agent from overspending against a shopper's monthly limit.
-
-## The Solution
-
-ASTRA AI is a full-stack agentic-commerce platform that inserts a **Trust & Financial-Consent layer** between the buyer and every monetary action:
-
-| Every... | ...is protected by |
+| Area | Current implementation |
 |---|---|
-| Checkout | Amount-bound, single-use financial consent (voice-biometric phrase or 6-digit OTP) |
-| Listing | A cryptographic authenticity proof (SHA-256 fingerprint, ZK verification, Ed25519 stamp, deepfake scan) |
-| Price | An autonomous Agent-to-Agent (A2A) negotiator streaming buyer-vs-seller rounds live over WebSocket |
-| Dispute | An AI risk engine that resolves in under 30 seconds with a timestamped, auditable reasoning trail |
-| Budget | A guardrail agent that blocks, warns, or suggests installments before money moves |
+| Web application | Next.js App Router, React, TypeScript, Tailwind CSS |
+| API | FastAPI, Pydantic, SQLAlchemy |
+| Persistence | PostgreSQL intended for deployment; SQLite supported by local/runtime migration paths |
+| Catalogue | Shared product table, seller inventory operations, deterministic search/ranking, optional visual and vector signals |
+| Authentication | JWT cookie/session flow, email OTP, optional Google OAuth |
+| Commerce | Buyer cart, stock reservation, checkout sessions, consent authorization, PKR wallet ledger, reversible order window |
+| Languages | Nine selectable/detectable locale families with partial phrase normalization and provider-assisted response translation |
+| Integrations | Groq-compatible vision/STT/negotiation configuration, Meta WhatsApp Cloud API configuration, external display FX-rate feed |
+| UI localization | English-first. The selector changes locale-aware behavior and selected copy; it does not translate every page |
 
-> **Vision:** Make AI-executed commerce verifiable, consented, escrowed, and self-healing.
+Counts and test badges from older documentation were removed because they were not a reliable description of the current worktree. This README task inspected source and did not run the test suite.
 
-## Platform at a Glance
+## Architecture and repository map
 
-<div align="center">
+```text
+app/                         Next.js pages and layouts
+components/                  Buyer, seller, product, chat, voice, and dashboard UI
+lib/                         API client, shared types, region settings, voice helpers
+astra-backend/app/api/       REST endpoints and API router
+astra-backend/app/realtime/  WebSocket handlers
+astra-backend/app/services/  Commerce, search, risk, localization, and AI adapters
+astra-backend/app/models/    SQLAlchemy persistence models
+astra-backend/app/schemas/   Pydantic request and response contracts
+astra-backend/alembic/       PostgreSQL migrations
+astra-backend/tests/         Backend tests
+e2e/                         Playwright scenarios
+```
 
-| 18 | 21 | 7 | 9 | 18 | 22 | 104/104 | 9 |
-|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| Frontend Routes | API Endpoint Modules | WebSocket Channels | Alembic Revisions | Model Modules | Backend Services | Backend Tests Passing | E2E Scenarios |
+The browser calls `/api/v1/*` REST routes and several WebSocket routes. `app/main.py` mounts the v1 router and realtime routers, exposes `/health` and `/metrics`, and configures database startup. The product table is shared by buyer catalogue and seller inventory; seller analytics, goals, and seller-wallet records use seller-scoped data/models.
 
-*All figures above were verified directly against the repository on 3 September 2026 (route files, endpoint modules, and a live `pytest` run — see [Testing & Quality](#testing--quality)).*
+### Main frontend routes
 
-</div>
-
-## Core Features
-
-### 🤝 A2A Autonomous Negotiation
-Buyer and seller agents negotiate live over `WS /ws/negotiation/{product_id}` — alternating offer/counter rounds, converging within 6 rounds, every session and round persisted for full auditability. Optionally upgrades to a live Groq LLM seller agent, with a safe deterministic-rules fallback that never counters below the seller's floor.
-
-### 🎙️ Voice-to-Action Checkout
-Speak "*mujhe samsung phone kharido 150 hazar tak*" — ASTRA parses the action, a Roman-Urdu-aware budget ("hazar", "k", "lakh"), and a category, then deep-links straight to checkout with the consent modal pre-launched. Non-purchase speech falls back to normal semantic search.
-
-### 🔐 Zero-Knowledge Proof & Cryptographic Stamp
-Every listing carries a Groth16/BN254 ZK verification, a 32-hex seller reputation hash, and an Ed25519-signed cryptographic stamp — surfaced as a "Verified" badge on trustworthy listings.
-
-### 🛡️ Deepfake Guardrail
-An AI Synthetic Image Scan (AstraGuard-ViT-L/14) reports a manipulation-probability score and verdict on every listing image.
-
-### 📈 Predictive Restock Guardian
-Per-product purchase-interval modeling predicts the next likely purchase date, urgency, confidence, and estimated next price.
-
-### 🌍 Cross-Border Micro-Escrow
-A deterministic, zero-fee, three-hop settlement corridor (PKR → corridor currency → USD → PKR) with live per-hop rate/latency.
-
-### 🗣️ Multilingual, Code-Switched Understanding
-Roman Urdu, Punjabi, and English are understood interchangeably across search, voice intent, and negotiation — ASTRA's core differentiator for PKR-denominated, code-switching markets.
-
-### Supporting pillars
-ASTRA Check (rules-vs-LLM contradiction monitor) · Budget Guardrail Agent · Multi-modal Explore (text/voice/image with fusion) · Seller↔Buyer live messaging · Self-Healing Fallback Engine with a visible recovery log.
-
-### Seller Workspace
-Seller Mode is stored in the root `AccountModeProvider`, swaps the full desktop/mobile navigation, and routes seller sessions into `/seller/dashboard`. Sign-up lets the user choose Buyer or Seller; verified Buyer sessions open `/buyer/dashboard` and Seller sessions open `/seller/dashboard`. The seller route layout checks the authenticated backend role; the API independently gates seller endpoints with `get_current_active_seller`. Seller listings and orders continue to use the canonical products/orders tables so buyer catalog and escrow records stay aligned. Seller scores, wallet ledger, and sales targets are seller-specific tables, isolated from buyer balances. The dashboard and nine workspace pages live under `/seller/*`.
-
-Barcode lookups currently use the ASTRA sample/verified catalog and return a clear manual-entry response for unknown codes. No external GTIN provider is configured. Seller payout requests are deliberately disabled until a verified payout processor and seller-settlement ledger are integrated; the seller wallet view does not present the shared buyer wallet as withdrawable money. Apply the latest backend schema with `alembic upgrade head` when using PostgreSQL.
-
-## Why ASTRA Wins
-
-| Judge Criterion | ASTRA's Answer |
+| Route | Purpose |
 |---|---|
-| **Originality** | First platform to treat financial consent as a first-class primitive of agentic commerce |
-| **Technical depth** | 18 routes, 21 endpoint modules, 40+ REST routes, 7 WebSocket channels, pgvector + HNSW, Alembic migrations, escrow ledger with DB-level invariants |
-| **AI sophistication** | Multi-agent swarm, A2A negotiation, Roman-Urdu-aware intent parsing, a risk engine, predictive restock — all with auditable reasoning trails |
-| **Real-world impact** | Purpose-built for PKR-denominated emerging-market commerce: budget guardrails, zero-fee FX corridors, instant refunds |
-| **Engineering rigor** | 104 pytest cases passing (verified) + a 9-scenario Playwright E2E suite, 4-job CI pipeline, production config validators, immutable audit trail |
-| **Demo wow-factor** | Live WebSockets throughout — negotiation, wallet, deals, and disputes all update on screen in real time |
+| `/` | Home catalogue, ASTRA Check summary, recommendations, pipeline/status cards, assistant, approval card, goals/wallet rail |
+| `/buyer/dashboard` | Authenticated buyer home composed by `HomeClient`; redirects non-buyers to the seller dashboard |
+| `/explore` | Search by text, voice, or image, with category and price filters |
+| `/categories` and `/categories/[slug]` | Category browsing and matching product cards |
+| `/product/[slug]` | Product detail, add-to-cart, consent checkout, negotiation, seller messaging, authenticity, trust, outfit and spatial-decor panels, AR preview |
+| `/deals` | Active deals, reservations, and deal updates |
+| `/orders` | Buyer orders, timelines, reversible actions, and dispute entry points |
+| `/messages` | Buyer/seller messaging UI and chat surface |
+| `/goals` | Buyer budget, shopping goals, matched deals, and restock estimates |
+| `/wallet` | Buyer PKR balance, ledger, consent, top-up/withdrawal UI and display-only settlement context |
+| `/astra-check` | Buyer trust, price and budget evaluation surface |
+| `/b2b` | B2B payload evaluation/demo interface |
+| `/seller/dashboard` | Seller overview and dashboard panels |
+| `/seller/inventory`, `/seller/products` | Inventory creation/editing and listing management |
+| `/seller/orders`, `/seller/fulfillment` | Seller-scoped order review and dispatch workflow |
+| `/seller/astra-check` | Seller indicators and rule/compliance information |
+| `/seller/sales-goals` | Seller targets and progress |
+| `/seller/wallet` | Seller earnings view; payouts are disabled unless a real processor is configured |
+| `/seller/messages`, `/seller/notifications` | Seller conversations and notifications |
 
-## Tech Stack
+## Feature and language status
 
-| Layer | Technology |
+### Locale support matrix
+
+The locale set is English (`en`), Urdu (`ur`), Roman Urdu (`roman_urdu`), Punjabi (`pa`), Pashto (`ps`), Sindhi (`sd`), Persian/Farsi (`fa`), Simplified Chinese (`zh`), and Arabic (`ar`). The region selector offers Pakistan (PK), China (CN), Iran (IR), and UAE (AE); country choice filters the displayed language options. English is included in every region. Pakistan's list also includes Persian.
+
+The table distinguishes phrase support from complete language support. `Partial` means there are selected aliases, phrase patterns, template entries, or provider prompts, not broad linguistic coverage or a language-quality guarantee.
+
+| Language | NLU / voice recognition / TTS | Native UI translation | A2A negotiation / recovery | COD risk / voice-guard copy | Disputes / review trust | Financial awareness / purchase safeguards | Price-quality comparison / demand prediction |
+|---|---|---|---|---|---|---|---|
+| English | NLU rules and browser speech locale; optional server Whisper STT; no configured server TTS by default | English UI is the baseline | Rules negotiation; optional Groq reasoning; English copy available. 30-second reversal window is language-independent | English template and advisory score route | Deterministic dispute rule; review detector is heuristic and not wired to persisted review/photo evidence | Server checks consent ID, amount, ownership, expiry, and snapshot before debit | Static category price bands and seeded/interval-style forecasts |
+| Urdu | Selected Urdu-script phrase mappings; browser locale and optional provider STT; no response TTS path | Mostly English; selector is not a full Urdu UI | Locale can be passed or inferred; generated translation requires configured Groq | Urdu entry exists; delivery provider is not configured by default | Same deterministic/limited evidence behavior | Same server safeguards; modal and most messages remain English | Same rule/seeded signals; no Urdu-specific model |
+| Roman Urdu | Stronger selected commerce aliases for common budget, category, size, color and order phrases; browser recognition uses Urdu locale | Some Roman Urdu search/voice copy; most UI remains English | Roman Urdu locale can be requested; fallback translation depends on Groq | Roman Urdu entry exists; prompt preparation does not itself send a message | Selected Roman Urdu phrases normalize; review sentiment remains a small word-list heuristic | Same server safeguards; no consent bypass from Roman Urdu input | Same rule/seeded signals |
+| Punjabi | Selected Roman Punjabi aliases and script detection/normalization | English-first | Locale prompt/translation path is conditional on Groq | Punjabi entry exists; no live voice/WhatsApp delivery by default | Limited normalization only | Same backend guards | Same rule/seeded signals |
+| Pashto | Selected Pashto aliases and script cues; not broad dialect/accent recognition | English-first | Locale prompt/translation path is conditional on Groq | Pashto entry exists; no live delivery by default | Limited normalization only | Same backend guards | Same rule/seeded signals |
+| Sindhi | Selected Sindhi aliases and script cues; not broad dialect/accent recognition | English-first | Locale prompt/translation path is conditional on Groq | Sindhi entry exists; no live delivery by default | Limited normalization only | Same backend guards | Same rule/seeded signals |
+| Persian/Farsi | A limited set of Persian-script shopping phrases and locale detection | English-first; available in PK and IR selectors | Locale prompt/translation path is conditional on Groq | Persian entry exists; no live delivery by default | A few normalized terms only | Same backend guards | Same rule/seeded signals |
+| Chinese | A limited set of Simplified Chinese shopping/order/review terms and script detection | English-first; Chinese option is offered for CN | Locale prompt/translation path is conditional on Groq | Chinese entry exists; no live delivery by default | A few normalized terms only | Same backend guards | Same rule/seeded signals |
+| Arabic | A limited set of Arabic shopping/order/review terms and script detection | English-first; Arabic option is offered for AE | Locale prompt/translation path is conditional on Groq | Arabic entry exists; no live delivery by default | A few normalized terms only | Same backend guards | Same rule/seeded signals |
+
+**Important language constraints**
+
+- `app/services/shopping_nlu.py` and `localization.py` implement dictionaries, regular expressions, script checks, and phrase substitutions. They are not general-purpose machine translation or speech models.
+- `TopBar.tsx` uses the selected locale for browser speech recognition and search copy. Most labels, forms, product content, dashboard copy, and system errors remain English.
+- Server-side STT uses the configured Whisper-compatible Groq endpoint and does not pass an explicit target language parameter. In the browser, speech recognition depends on browser/platform support.
+- `voice_service.synthesize()` currently returns `None`; `/voice/synthesize` responds with HTTP 501. The current UI has no `speechSynthesis.speak()` response path; voice helpers only cancel browser speech output if one is active. There is no functioning universal TTS response path or language/latency guarantee.
+- Chat translation is a separate Groq text-model pass when `GROQ_API_KEY` is configured. If translation is unavailable, the code retains the source reply; it does not guarantee a translated fallback.
+- Template entries exist for the nine locales, but template completeness, script encoding, dialect quality, accessibility, and legal/financial wording require native-speaker review before launch.
+
+### Capability status at a glance
+
+| Capability | Code status | Operational qualification |
+|---|---|---|
+| Catalogue search and product discovery | Implemented with deterministic filters/ranking and optional fusion signals | Search quality depends on catalogue metadata and configured providers; no universal NLU coverage |
+| Voice interaction | Partial prototype | Browser speech, WebSocket events, and buffered audio-to-STT path; no end-to-end streaming STT/TTS latency SLA |
+| WhatsApp adapter | Implemented adapter, provider-config dependent | Webhook signature/verification, text/photo/voice parsing and product links; outbound send requires Meta credentials; links open product pages, not an auto-checkout |
+| COD risk panel | Advisory scoring and manual prompt preparation | Payment method, route-risk and verified-phone signals are not recorded by the current schema; high-risk trigger prepares a prompt but returns `not_sent_no_provider_configured` |
+| Outfit stylist | Advisory catalogue matching | Metadata plus optional product embedding similarity; absent inventory categories produce no item |
+| Trust detector | Heuristic service exists | Product trust-score route currently calls it with empty review/photo samples; seller score is the available evidence. It is not a live fake-review detection pipeline |
+| Spatial room decorator | Read-only room-image and catalogue prototype | Groq vision is optional; visual layout cues are estimates, dimensions are not measured; results depend on decor inventory |
+| Web-AR | Conditional | `<model-viewer>` is used where a supported seller-provided 3D model URL exists. Most catalog items may have no model; try-on sample assets are illustrative, not product-fit simulation |
+| A2A price negotiation | REST and WebSocket flows exist | REST can use optional Groq reasoning; WebSocket A2A is deterministic. Negotiation acceptance is not checkout approval or payment |
+| Demand prediction | Demonstration heuristic | Restock timing uses stable seeded intervals/fallback products, not a trained demand model |
+| Review UI | Presentational/demo data in product detail | Product detail response synthesizes a sample review and rating breakdown from aggregate product fields; it is not a persisted review corpus |
+| Cryptographic/ZK/deepfake showcase values | Demo outputs | Current helper derives stable hashes and seeded values; it does not perform a real Groth16 proof, Ed25519 signing, or trained image-manipulation inference |
+
+### Phase 0–6 and showstopper progress report
+
+The repository does not define a machine-readable phase registry or release checklist. The mapping below follows the feature sequence described in project requests and reports code evidence, not a claim that a phase passed acceptance testing.
+
+| Phase / feature group | Status from code inspection |
 |---|---|
-| Frontend framework | Next.js 14.2 (App Router), SSR + client islands, middleware auth |
-| UI language | TypeScript 5.5, strict typing shared with backend schemas |
-| UI library | React 18.3, hooks-driven realtime state |
-| Styling | Tailwind CSS 3.4 with a custom design-token system |
-| Motion | framer-motion 11.18 |
-| Backend framework | FastAPI 0.115, 21 endpoint modules, 40+ REST routes, OpenAPI docs |
-| ORM / validation | SQLAlchemy 2.0 + Pydantic v2 |
-| Language | Python 3.12 |
-| Primary database | PostgreSQL (+ SQLite for local/CI test runs) |
-| Vector search | pgvector (HNSW cosine index) for product semantic embeddings |
-| Migrations | Alembic — 13 ordered revisions |
-| Realtime | Raw WebSockets — negotiation, deals, wallet, notifications, orders, pipeline, messages |
-| Auth | JWT + email OTP two-factor |
-| CI/CD | GitHub Actions — backend tests, frontend build, E2E, Docker build (4 jobs) |
+| Phase 0 — Core application, authentication, catalogue and seller/buyer routes | Present: Next.js frontend, FastAPI API, database models, JWT/OTP and optional Google OAuth, shared catalogue, role-gated seller routes |
+| Phase 1 — Commerce, budget and financial consent | Present: cart, checkout session, PKR wallet, hash-bound consent validation, idempotency checks, order lifecycle and a 30-second reversible window; consent voice UI has the limitation documented below |
+| Phase 2 — Conversational NLU and memory | Partial: common phrase/constraint extraction and persisted explicit shopping preferences; language coverage is dictionary/rule based |
+| Phase 3 — Multimodal catalogue/voice discovery | Partial: image validation and optional Groq vision, browser voice search, buffered WebSocket audio and optional STT; not continuous low-latency STT/TTS |
+| Phase 4 — ASTRA Check, trust, dispute and decision support | Mixed: rule-based affordability/trust/price checks and dispute workflow exist; cryptographic/deepfake showcase fields are deterministic demo values and review evidence is not connected to persisted samples |
+| Phase 5 — Streaming voice and interruption | Partial prototype: authenticated WebSocket accepts transcript/audio events and interrupt messages; audio is buffered until end-of-clip, server TTS streaming is absent, and no 0.23ms or sub-500ms benchmark is available |
+| Phase 6 — Order operations and bundle offers | Present with limits: buyer-scoped order tracking/return-request validation, bundle advisory calculator, negotiation approval and normal checkout consent; returns require review and bundle quotes do not create orders |
+| Showstopper 1 — COD Risk & Voice Guard | Advisory score and localized prompt preparation exist. Payment-method, phone-verification and delivery-route signals are incomplete; no auto-cancel; outbound confirmation provider is unconfigured |
+| Showstopper 2 — AI Outfit Stylist | Advisory recommendation cards use product metadata and optional embeddings; outcome quality depends on category metadata and available in-stock items |
+| Showstopper 3 — Fake Review & Seller Trust Detector | Heuristic scoring service exists, but the current product trust endpoint passes empty review/photo sets; it cannot currently substantiate a live authenticity percentage from buyer evidence |
+| Showstopper 4 — WhatsApp Commerce Adapter | Webhook parsing, signature verification, media download restrictions, optional STT/vision and catalogue/product-page links exist; Meta credentials are required for actual send/receive deployment |
+| Cross-border localization and spatial room decor | Partial/advisory: country-aware display and route estimates, locale prompts, room cues and product matching exist; UI translation, seller origin editing, actual duties, dimensions, and room-model inventory are incomplete |
 
-## Architecture
+## Buyer experience
 
-```
-┌─────────────────────┐        ┌──────────────────────┐        ┌─────────────────────┐
-│   Next.js Frontend    │  REST  │   FastAPI Backend      │  SQL   │   PostgreSQL          │
-│   18 routes, SSR      │◄──────►│   40+ endpoints         │◄──────►│   + pgvector (HNSW)   │
-│   TypeScript + React  │  WS    │   21 endpoint modules   │        │   Alembic migrations  │
-└─────────────────────┘◄──────►└──────────────────────┘        └─────────────────────┘
-                          7 live WebSocket channels:
-             negotiation · deals · wallet · notifications · orders · pipeline · messages
-```
+### Home and buyer dashboard
 
-Consent, authenticity, negotiation, escrow, and dispute resolution are each an independent engine under `astra-backend/app/services/`, composed by a `consent_orchestrator` into one Overall Verdict per transaction.
+`/buyer/dashboard` loads the authenticated user's home payload and renders `HomeClient`. It is a dashboard-like home composition rather than a tabbed analytics application. The visible sections are:
 
-## Project Structure
+- **Hero banner and suggestions:** links into catalogue discovery.
+- **ASTRA Check widget:** affordability, seller trust, and price-fairness verdicts; currently rule-based.
+- **Recommended products:** ranked by seller trust and rating in `RecommendationEngine`, not collaborative filtering.
+- **Pipeline bar:** order/pipeline status data when available.
+- **AI assistant card:** best-match suggestion based on a simple affordability classification.
+- **Human approval card:** pending approval/reversal actions.
+- **Goals and wallet rail:** shopping goals, budget and wallet summary data.
 
-```
-Astra_ai/
-├── app/                        # Next.js App Router pages (Home, Explore, Categories, Deals,
-│                                #   ASTRA Check, Goals, Wallet, Orders, Messages, B2B, Product)
-├── components/                 # React components (TopBar, ExploreClient, GlobalVoiceFab, ...)
-├── lib/                        # Typed API client, shared types, hooks
-├── astra-backend/
-│   ├── app/
-│   │   ├── core/                # config, database, security, rate limiting
-│   │   ├── models/               # 18 SQLAlchemy table modules
-│   │   ├── schemas/              # Pydantic request/response contracts
-│   │   ├── services/             # 22 business-logic engines (trust, finance, negotiation, explore...)
-│   │   ├── realtime/             # WebSocket managers
-│   │   └── api/v1/endpoints/     # 21 modules: auth, home, explore, deals, cart, wallet, goals,
-│   │                             #   orders, astra_check, negotiation, b2b, chat, messaging, seller...
-│   ├── tests/                    # pytest suite — 104 tests
-│   └── alembic/versions/         # 9 Postgres migration revisions
-├── e2e/                         # Playwright end-to-end specs — 9 scenarios
-└── docker-compose.prod.yml
-```
+The sidebar/top bar provide navigation, account/role mode, region selection, language selection, display currency, theme, notifications, search, and voice entry. A country modal opens on first load if no country is stored (or a signed-in account country can be used). Currency selection is display-only: PKR is the checkout/base-wallet currency. The UI retrieves and caches indicative PKR conversion rates from a public exchange-rate endpoint; on missing rates it falls back to PKR display.
 
-## Getting Started
+### Product detail and discovery panels
 
-### Prerequisites
-- Node.js 18+ and npm
-- Python 3.12+
-- PostgreSQL (or use the included Docker Compose stack; SQLite works for local test runs)
+`/product/[slug]` and `ProductDetailClient` include product media, category-safe image fallback, price/stock/variant controls, seller/trust summary, review presentation, and these actions/panels:
 
-### Backend
+- **Add to Cart:** adds the selected product/quantity/variant to the authenticated cart; it does not itself debit the wallet.
+- **Buy Now:** requests a server checkout session, displays the server total and launches financial consent.
+- **AI Negotiate:** starts offer/counter rounds; a buyer-accepted negotiation must be approved before the ordinary checkout route accepts it.
+- **Save to Shopping Goal:** creates/updates a buyer goal; optional allocation is a separate wallet operation and must be treated as a money movement.
+- **Message Seller:** opens the seller conversation drawer.
+- **ASTRA Check & buyer reviews / Authenticity Audit:** the first tab includes aggregate and sample review UI; audit details include calculated listing hash and several demo/seeded indicators described above.
+- **Trust badge:** advisory trust metrics. Current API evidence is mostly seller trust because review/photo evidence collections are empty at the endpoint.
+- **Outfit Stylist:** suggests complementary products from active inventory using category, color, formality, pattern and optional embeddings. It can request a non-binding bundle estimate with seller floors; it does not add the bundle to cart.
+- **Spatial Room Decorator:** accepts a room photo and optional text, queries visual cues and catalogue matches, displays a listed-price total and any cross-border notices. It does not reserve stock, mutate product data, create an order, or call checkout.
+- **Cross-border shipping badge:** displays route-based ETA and a rough 10% planning duty allowance where origin differs from buyer region. These are advisory estimates, not a carrier/customs quote or checkout charge.
+- **AR / 3D Preview:** `ARTryOnModal` loads `<model-viewer>` for configured example assets; sample apparel assets are marked illustrative. Room bundle cards expose AR placement only when inventory specifications include an HTTPS `.glb`/`.gltf` `model_url`.
 
-```bash
-cd astra-backend
-python -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
+The spatial photo service requests wall tone, lighting, visible layout, furniture aesthetic, and visible constraints. It explicitly does not estimate room dimensions/depth from a 2D image. Spatial matching is catalogue keyword/cue ranking, not a trained interior-design model. Missing model assets and missing inventory are shown as unavailable rather than fabricated.
 
-pip install -r requirements.txt
-cp .env.example .env               # set DATABASE_URL + SECRET_KEY at minimum
+### Orders, returns, wallet, and goals
 
-python -m alembic upgrade head     # PostgreSQL only; SQLite uses runtime migrations
-python -m app.db.seed              # idempotent demo data (see credentials below)
+- **Orders:** buyer-scoped list/detail/tracking endpoints show the current status and event timeline. Statuses include pending approval, reversible window, confirmed, shipped, delivered, and cancelled.
+- **Returns/exchanges:** buyer ownership and eligibility window checks apply. The request endpoint records a request for review; it does not automatically issue a return refund or silently change an order.
+- **Dispute:** a separate dispute endpoint exists. Within an order's active 30-second reversal window, its deterministic risk score can auto-refund when it reaches the configured threshold; lower scores are queued for human review. This behavior is specific to the dispute path and does not authorize purchases.
+- **Wallet:** buyer balance and ledger are PKR-backed. Wallet top-up, withdrawal, consent, and ledger routes are server-side operations; display currency conversion does not change settlement currency.
+- **Goals/budget:** buyer goals, budget caps, savings and matching recommendations use explicit server operations. Goal allocation can move money into a goal bucket and is not the same as a read-only recommendation.
 
-uvicorn app.main:app --reload
-```
+## Seller workspace
 
-API docs: `http://localhost:8000/docs`
+Seller pages use `SellerRouteGuard` and seller API dependencies. The overview at `/seller/dashboard` provides:
 
-### Google sign-in (optional)
+- **Top actions:** Add New Listing and View Seller Rules.
+- **Summary cards:** total settled seller revenue, pending order count, inventory value/active listing count, and average rating.
+- **Seller trust/verification panel:** seller trust metrics and status indicators.
+- **Revenue Growth chart:** plots the API's recent monthly revenue series.
+- **Top Selling Products table:** product, price, stock, and a sales-velocity field. The displayed “views” metric is not a full analytics event pipeline.
+- **Seller tools shortcuts:** inventory/barcode, orders, fulfillment, and messages.
+- **Merchant Insights:** seller-scoped aggregates for negotiations, accepted prices, search trends, variant demand, and related summaries. The panel states that aggregates omit buyer identities; some search trend values are explanatory rather than individual event tracking.
+- **COD Risk panel:** buyer/order risk factors, a manual prompt preparation action for high scores, and a manual-review action. The event is not sent through a voice/WhatsApp provider by default.
+- **Astra Seller Assistant:** interactive text panel answering inventory, COD, price-floor, and order questions. The API reads seller-scoped records and returns rule-based summaries. It is explicitly read-only; suggested follow-up chips are static prompts.
+- **Inline inventory form:** barcode lookup/scan, listing metadata, price, seller floor, stock, image and specifications. Use `model_url: https://…/model.glb` in specifications to enable spatial AR for a listing. The current form does not expose an origin-country control; seller-created products default to PK unless populated through another data path.
 
-Google sign-in requires an OAuth 2.0 Web application client. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `astra-backend/.env`, and register the exact redirect URI `http://localhost:8000/api/v1/auth/google/callback` in Google Cloud Console. Keep `GOOGLE_REDIRECT_URI` and `FRONTEND_ORIGIN=http://localhost:3000` aligned with your local URLs. For deployments on separate subdomains, configure `AUTH_COOKIE_DOMAIN` to the shared parent domain so the browser can send the session cookie to both the frontend and API.
+Seller workspace sections:
 
-### Production database migration
+| Seller page | Functional behavior and current limits |
+|---|---|
+| Inventory | Create/update/delete seller-owned products; stock/status and price validation; barcode helper uses the sample/verified catalogue and manual entry for unknown barcodes |
+| Products | Seller-scoped listing cards and active/inactive toggle; listings with order history cannot be deleted, so stock/status should be changed instead |
+| Orders | Seller-owned order list and escrow/order actions through `SellerEscrowOrders` |
+| Fulfillment | Dispatch confirmed orders; delivery confirmation belongs to the buyer flow |
+| ASTRA Check | Seller verification/trust and business indicators; these should not be read as an external identity-provider guarantee unless configured |
+| Sales Goals | Create and view seller targets/progress; progress comes from tracked order revenue/contributions |
+| Wallet | Earnings summary and ledger placeholder; UI/API report payouts disabled until a verified payout provider is connected |
+| Notifications | Seller notification list |
+| Messages | Buyer/seller direct message panel with realtime updates |
 
-The current Alembic head is `20261014_13`. Seller listings and orders intentionally use the canonical product and order tables; there are no duplicate seller listing/order tables to migrate. The seller wallet and ledger are separate from buyer wallet funds.
+**Seller bundle pricing:** seller inventory accepts `seller_price_floor`; the multi-item advisory bundle calculator respects the stored per-item floor. The single-item negotiation route uses a deterministic floor estimate derived from listing price and trust, not necessarily the seller-configured floor. Offers remain non-binding until buyer review/approval and checkout consent.
 
-Before upgrading a production PostgreSQL database, confirm that the backend environment points to the approved target, take a restorable backup, and review the migration history. Do not put database passwords directly in commands or commit them to `.env`.
+**Cross-border seller parameters:** product records include `origin_country`, but the visible seller inventory form does not currently provide an origin-country field. Existing defaults/data can support cross-border notices; seller self-service country maintenance remains incomplete.
 
-```powershell
-Set-Location .\astra-backend
-.\.venv\Scripts\python.exe -m alembic heads
-.\.venv\Scripts\python.exe -m alembic history
-.\.venv\Scripts\python.exe -m alembic current
+## AI and decision-support services
 
-# Set these to the approved PostgreSQL target; pg_dump will prompt for a password if needed.
-$env:PGHOST = "<approved-host>"
-$env:PGPORT = "5432"
-$env:PGUSER = "<approved-user>"
-$env:PGDATABASE = "<approved-database>"
-New-Item -ItemType Directory -Force ..\backups | Out-Null
-pg_dump --host $env:PGHOST --port $env:PGPORT --username $env:PGUSER --format=custom --file ..\backups\astra-pre-20261014_13.dump $env:PGDATABASE
+| Service | Source area | Actual behavior |
+|---|---|---|
+| Shopping NLU and memory | `shopping_nlu.py`, `shopping_memory.py`, chat/explore | Deterministic extraction of common category, color, size and budget phrases; selected dialect aliases; authenticated account preference facets are stored and used for ranking. No autonomous purchase action is produced by parsing |
+| Buyer tone | `buyer_tone.py` | Keyword rules for price sensitivity, hesitation and high intent; emits optional prompts. It is not a psychological/emotion model |
+| Visual search | `vision.py`, `explore.py` | Image signature validation and optional Groq vision descriptor request; ranking fuses text/category/price and available image or vector signals. Provider absence degrades the visual path |
+| Spatial decorator | `spatial_decorator.py` | Optional Groq room-photo JSON analysis plus read-only inventory lookup for sofas, rugs, curtains and lamps. No metric dimensions, placement coordinates, cart mutations, or checkout calls |
+| Outfit stylist | `outfit_stylist.py` | Metadata/category matching with color, formality, pattern and optional embedding similarity; returns advisory look cards and cross-border estimates |
+| Trust detector | `trust_detector.py` | Word-list sentiment/rating mismatch, duplicate text, timestamp clustering, and supplied photo evidence scoring. Current product endpoint does not load persisted review/photo samples, so scores there have limited confidence and rely mainly on seller trust |
+| COD risk | `cod_risk_engine.py`, `cod_risk.py` | Transparent weighted score over recorded order history/returns, order total versus history, route risk and phone verification. The current schema has no validated route-risk or phone-verification field and does not record payment method, so those signals are unknown and `cod_applicability` is `not_recorded` |
+| Deals / price fairness | `deals_pipeline.py`, `market_feed.py`, `price_fairness_engine.py` | Deal eligibility combines rolling observations, listing discount, seller metrics and stock. Competitor observations are initialized with deterministic multipliers; optional USD/PKR feed applies a bounded adjustment. ASTRA Check's category fairness engine uses a static category-average table |
+| Restock / demand | `astra_agents.py`, `budget_agent.py` | Forecast intervals are deterministic, stable-seeded estimates based on limited order history or fallback products. They are product guidance, not a trained demand-prediction model |
+| A2A negotiation | `negotiation.py`, `groq_negotiation.py`, `realtime/negotiation_ws.py` | REST rounds use a deterministic cap/floor and optionally request Groq JSON reasoning with validation. WebSocket agent rounds use deterministic arithmetic. Locale is passed to the optional reasoning/translation paths; numeric bounds are checked server-side |
+| Authenticity showcase | `astra_agents.py`, product authenticity endpoint | SHA-256 listing fingerprint is computed, while ZK proof identifiers, cryptographic stamp fields, and synthetic-image scan scores are generated from deterministic seeds. The current code does not contain a cryptographic proof verifier, Ed25519 private-key signing flow, or actual image-forensics model |
+| WhatsApp commerce | `whatsapp_adapter.py`, `whatsapp_webhook.py` | Meta webhook handshake/signature validation, text/image/audio parsing, optional image/STT processing, catalogue matching, product review links, and optional outbound text. A calling-code lookup is only a buyer-country hint. It does not create an order or direct wallet debit |
 
-# Run only after verifying the backup and confirming the target database:
-.\.venv\Scripts\python.exe -m alembic upgrade head
-.\.venv\Scripts\python.exe -m alembic current
-```
+### Voice pipeline, latency, interruption, and TTS
 
-Verify `alembic heads` and the final `alembic current` both report `20261014_13`. Validate the backup restore procedure in a non-production environment first. The migration has not been run against a production database as part of this work.
+The repository has two related paths:
 
-### Production frontend build check
+1. Browser `SpeechRecognition` powers voice search in `TopBar`, `GlobalVoiceFab`, and `VoiceWidget`, using the selected browser locale where available.
+2. `/ws/voice` accepts transcript events and binary audio chunks. Audio is buffered per socket and passed to the configured STT adapter on `audio_end`; it is not streamed chunk-by-chunk into a streaming transcription model. The interrupt event invalidates an output generation and reports an interrupted state, but the backend currently does not stream TTS audio frames. `MediaRecorder` chunking therefore does not establish sub-500ms conversational latency.
 
-Stop any local Next.js development server before using the default `.next` build output:
+The `/voice/transcribe` endpoint uses the optional Groq Whisper-compatible STT request and otherwise returns a deterministic placeholder transcript. Server synthesis is not implemented (`synthesize()` returns `None`); the synthesis route responds with 501. The current UI has no `speechSynthesis.speak()` response path, so there is no functioning universal TTS path or language/latency guarantee.
 
-```powershell
-npm run build
-npx tsc --noEmit
-```
+There is **no measured “0.23ms WebSocket” benchmark in this repository**. `/metrics` measures aggregate HTTP request latencies and database health; it is not a WebSocket latency benchmark.
 
-If a development server must remain running, use a separate build output directory for the check:
+### B2B negotiation and recovery window
 
-```powershell
-$env:ASTRA_NEXT_DIST_DIR = ".next-production-check"
-npm run build
-Remove-Item Env:ASTRA_NEXT_DIST_DIR
-```
+- WebSocket `/ws/negotiation/{product_id}` runs deterministic buyer/seller rounds for up to six rounds and persists a negotiated session. Despite demo event names such as `deal_settled`, this means the negotiation price was accepted; it is not payment settlement.
+- REST `/api/v1/negotiation/{product_id}/offer` accepts offers, checks the buyer cap and computed floor, and can call Groq for structured reasoning. The provider response is parsed and counter values outside the floor/ask range are rejected.
+- The buyer must call the explicit negotiated-offer approval action; checkout verifies buyer ownership, approved session, listing/quantity/price, and expiry. Financial consent remains a separate subsequent action.
+- Negotiation sessions expire after 10 minutes by default. The **30-second recovery/reversal window** starts after checkout confirmation/debit, not during negotiation; deployment can change the interval through configuration.
+
+## Financial architecture and safeguards
+
+### Authoritative checkout path
+
+`app/services/checkout_fsm.py` is the central checkout/order state machine. In broad terms:
+
+1. Cart/session creation reloads and locks the buyer, cart, and product records; validates active listings, quantities, stock, and monthly budget; snapshots authoritative product prices; reserves stock; creates pending orders and a checkout session. This is a reservation, not a debit.
+2. Checkout sessions expire after 600 seconds by default. Abandonment/expiry cancels pending reservations and restores cart items/stock.
+3. Financial consent is requested for a specific buyer, exact amount, and checkout/order reference. Consent records include a one-time identifier, auth method, expiry/attempt state, and an order/checkout snapshot hash.
+4. Confirmation locks the session and relevant records, revalidates prices, quantities, listing status and the snapshot hash, checks consent ownership/amount/expiry/non-consumption, verifies PKR wallet funds and budget capacity, then writes the debit ledger entry and updates order/session state in one server transaction.
+5. The application marks consent consumed and opens the default 30-second reversal window. A buyer can cancel/refund only through allowed reversible state transitions. Finalization releases escrow according to the state machine.
+6. Negotiated checkout repeats the ownership, buyer-approval, price, stock and expiry checks before it creates a checkout session. AI offers alone cannot commit a purchase.
+
+Snapshot integrity is implemented as application-level SHA-256 binding and revalidation at confirmation. The schema stores the snapshot hash and single-use consent lifecycle fields; the repository does not show a database trigger that makes every snapshot row physically immutable. “Immutable snapshot” should therefore be understood as a hash-bound confirmation invariant, not as a claim about a DB-level append-only storage system.
+
+### Consent and user control
+
+- A chat, search, vision, WhatsApp, spatial, seller-assistant, recommendation, or risk-scoring route does not itself debit the buyer wallet or create a binding purchase.
+- WhatsApp links open the official product page with a referral marker. Product review and normal checkout remain in the authenticated web flow.
+- Bundle quotes and outfit suggestions are advisory. Seller-configured bundle floors are respected by the bundle quote service; the buyer must review and proceed through checkout.
+- COD risk does not auto-cancel an order or change its payment method. In the current COD API, high risk enables a seller-triggered prompt record; actual voice/WhatsApp delivery reports `not_sent_no_provider_configured`. Buyer confirmation updates the risk event only.
+- Return requests are buyer-scoped and queued for review; they are not automatic refunds.
+- Dispute processing is distinct: a buyer-initiated dispute during the reversible window can trigger a rule-based refund at the configured risk threshold. Below threshold it queues for human review. This flow refunds an existing reversible order; it does not authorize a new purchase.
+
+### Important consent UI qualification
+
+The current consent modal's “hold to say” interaction requests microphone permission, but the frontend constructs the expected sentence from the displayed amount rather than transcribing the speaker. The server still validates the submitted consent record against the exact amount, checkout/order reference, snapshot and one-time token, but the UI is **not voice biometrics or verified speech recognition**. OTP is a separate consent method. Review this limitation before treating the voice button as a strong authentication factor.
+
+The cross-border “micro-settlement” route shown in the UI is generated by deterministic demo data and fixed FX values; it is not a connected bank/custodian/FX clearing network. Display-currency conversion and customs allowances are advisory and do not change PKR checkout arithmetic.
+
+## API and realtime surface
+
+All REST API paths below are under `/api/v1` unless stated otherwise. The code is the source of truth; OpenAPI is available from the running FastAPI app.
+
+| Endpoint group | Representative operations |
+|---|---|
+| Authentication | `/auth/register`, `/auth/login`, `/auth/verify-otp`, `/auth/google/start`, `/auth/google/callback`, `/auth/me`, `/auth/logout`, password recovery |
+| Home/catalogue | `/home`, `/products/recommended`, `/products/{slug}`, product authenticity, outfit recommendations, trust score |
+| Explore | `/explore/search`, `/explore/intent`, catalogue product/detail routes |
+| Chat | `/chat/history`, `/chat/message`, streaming chat route; optional image upload and product/order/bundle card responses |
+| Voice | `/voice/transcribe`, `/voice/synthesize` (currently returns 501 without an implementation/provider) |
+| Spatial | `/spatial-decorator/recommendations` (authenticated, validated image upload, read-only inventory match) |
+| Cart/checkout | `/cart`, `/cart/add`, `/checkout/session`, checkout confirm/abandon, financial consent authorization |
+| Orders | `/orders`, `/orders/{ref}`, `/orders/track`, return request, buyer reversal, dispute and audit/detail routes |
+| Negotiation | `/negotiation/{product_id}/offer`, bundle advisory, explicit negotiated-session buyer approval |
+| Deals | `/deals`, deal reservation/release and deal details |
+| Wallet | `/wallet`, ledger, top-up, withdrawal, consent, micro-settlement display data |
+| Buyer goals | `/goals`, budget dashboard, matched deals and shopping-goal operations |
+| Seller | `/seller/dashboard-stats`, analytics, `/seller/assistant`, inventory, orders, fulfillment, goals and wallet summary |
+| COD risk | `/cod-risk/orders/{ref}`, confirmation prompt preparation, manual review, buyer confirmation |
+| WhatsApp | `/webhooks/whatsapp` GET verification and signed POST webhook |
+| B2B / pipeline / ASTRA Check | `/b2b/evaluate`, `/pipeline/state`, `/astra-check/*` |
+
+Realtime channels mounted by `app/main.py` include:
+
+| WebSocket route | Use |
+|---|---|
+| `/ws/voice` | Authenticated transcript/audio event protocol; buffered STT, NLU/tone events, interrupt signal |
+| `/ws/negotiation/{product_id}` | Deterministic A2A offer/counter feed |
+| `/ws/deals` | Deal update broadcasts |
+| `/ws/wallet/{user_id}` | Wallet event updates with user checks |
+| `/ws/notifications` and `/ws/orders` | Notification/order events |
+| `/ws/messages/{conversation_id}` | Buyer/seller conversation updates |
+| `/ws/pipeline` | Order/pipeline state updates |
+
+## Configuration and local development
+
+### Requirements
+
+- Node.js and npm (see `package.json` for pinned Next.js/React/tool versions).
+- Python version compatible with the backend dependencies.
+- PostgreSQL for deployment. The backend has SQLite/local support for development and tests.
 
 ### Frontend
 
-```bash
+```powershell
 npm install
-cp .env.local.example .env.local   # set NEXT_PUBLIC_API_URL
+npx tsc --noEmit
 npm run dev
 ```
 
-Open `http://localhost:3000`
+The frontend reads `NEXT_PUBLIC_API_URL` and defaults to `http://localhost:8000`. The normal API client includes browser credentials for the auth cookie. Display FX lookup uses `open.er-api.com` from the browser and is optional/fallback-safe.
 
-### Docker (full stack)
+### Backend
 
-```bash
-docker compose -f docker-compose.prod.yml up --build
+```powershell
+Set-Location .\astra-backend
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+Copy-Item .env.example .env
+python -m alembic upgrade head
+python -m app.db.seed
+uvicorn app.main:app --reload
 ```
 
-## For Judges — Demo Access Notes
+On non-Windows shells, activate with `source .venv/bin/activate`. Review the environment template before starting; set a unique `SECRET_KEY` and correct `DATABASE_URL`. PostgreSQL deployments should apply the migration chain in `astra-backend/alembic/versions/` before serving traffic. The worktree contains migrations through revision `20261021_19_cross_border_localization`; verify the actual Alembic head in the target checkout/database before deployment.
 
-To keep the demo self-contained (no real SMTP/SMS provider configured), please note the following before evaluating:
+### Optional integrations
 
-### Demo login credentials (seeded automatically by `python -m app.db.seed`)
-
-| Role | Email | Password |
+| Integration | Configuration area | Behavior when absent |
 |---|---|---|
-| Buyer | `aisha@astra.ai` | `demo1234` |
-| Seller (multiple stores) | `seller@astra.ai`, `laptophub-pk@astra.ai`, `audionest@astra.ai`, etc. | `demo1234` |
+| Groq vision / text / negotiation | `VISION_PROVIDER`, `VISION_API_KEY` or `GROQ_API_KEY`, `VISION_MODEL`, `GROQ_MODEL` | Vision analysis can be unavailable; deterministic search/rules remain |
+| Groq-compatible STT | `STT_PROVIDER=groq`, `STT_API_KEY` | No server transcript; some callers use a deterministic/browser fallback |
+| TTS | `TTS_PROVIDER`, `TTS_API_KEY` | Current backend synthesizer is a stub and route returns 501 |
+| Meta WhatsApp Cloud API | verify token, app secret, access token, phone number ID and API version settings | Verification/webhook send is disabled or outbound send reports false; no WhatsApp delivery occurs |
+| Google OAuth | Google client ID/secret and callback/origin settings | Google sign-in unavailable |
+| USD/PKR market feed | market-feed settings | Static seeded observations/rates are used where implemented |
+| Seller payout processor | configured payout dependency/provider | Seller payout endpoints return unavailable; seller UI says payouts disabled |
 
-### ⚠️ OTP will not arrive by email/SMS in this environment
-Login and signup require a 6-digit OTP after the password step. Because no real email/SMS provider is configured for the demo, the code is **never actually delivered** — this is expected, not a broken flow.
+Never commit `.env` values, credentials, OTPs, access tokens, or production connection strings.
 
-- **Dev/demo OTP code: `123456`** — always works while `OTP_DEBUG_LOG=true` (the default outside production).
-- This is gated in `app/core/config.py` / `app/api/v1/endpoints/auth.py` and is **automatically disabled the instant `APP_ENV=production`** — it cannot be used to bypass OTP on a live deployment.
-- Alternatively, run with `OTP_DEBUG_LOG=true` and check the backend console — the generated code is logged there instead of emailed.
+## Verification status
 
-We're flagging this explicitly so judges aren't stuck at the OTP screen — it's a deliberate, environment-gated hackathon shortcut, not an undocumented backdoor.
+This README was generated from source inspection of the current worktree: frontend routes/components, backend endpoints/services, schemas/models, realtime handlers, configuration and migrations. No tests, builds, or benchmarks were run for this documentation task. Existing tests and E2E specs are present under `astra-backend/tests/`, `astra-backend/test_*.py`, `lib/*.test.mjs`, and `e2e/`; their presence is not evidence that they currently pass.
 
-### Suggested 3-minute demo flow
-1. **Voice login intent** — say *"mujhe samsung phone kharido 150 hazar tak"*; intent is parsed, product opens with the OTP consent modal pre-launched.
-2. **A2A negotiation** — open the AI Negotiator on a product and watch buyer/seller agents converge round-by-round with a live progress bar.
-3. **Trust stack** — Authenticity tab shows the ZK proof (Groth16), Ed25519 stamp, seller reputation hash, and a 0% deepfake-manipulation result.
-4. **Swarm & escrow** — order drawer shows the ASTRA Swarm Log (3 parallel agents); trigger a dispute and watch it resolve in ~2.5 seconds with escrow auto-refunded live over WebSocket.
-5. **Guardians** — `/goals` shows Predictive Restock Alerts; `/wallet` shows zero-fee cross-border micro-escrow hops; bottom-left panel shows the Self-Healing Engine log.
+Useful commands when you want to run verification:
 
-## Testing & Quality
-
-```bash
-# Backend — verified: 104 passed, 0 failed
-cd astra-backend
-python -m pytest tests/ -q
-
-# Frontend
-npx tsc --noEmit                    # strict type-check
-npm run build                       # production build, 18 routes
-
-# End-to-end (9 scenarios across core flows + showcase widgets)
+```powershell
+Set-Location .\astra-backend
+.\.venv\Scripts\python.exe -m pytest
+Set-Location ..
+npx tsc --noEmit
+npm run lint
+npm run test:voice
 npm run test:e2e
 ```
 
-CI runs all of the above automatically on every push via a 4-job GitHub Actions pipeline (backend tests → frontend build → E2E → Docker build). Run the suites locally before your final submission commit to confirm green status on your machine.
+The repository worktree was already dirty during this audit, with numerous modified and untracked application files. This README change does not imply those other changes were reviewed as a clean commit or released build.
 
-## API Overview
+## Known limitations and production work
 
-| Area | Example endpoint | Notes |
-|---|---|---|
-| Auth | `POST /api/v1/auth/login`, `/auth/verify-otp` | JWT + email OTP 2FA |
-| Explore | `POST /api/v1/explore/search`, `/explore/intent` | Text, voice, image, and fused multimodal search |
-| Negotiation | `WS /ws/negotiation/{product_id}` | Live A2A buyer/seller rounds |
-| Wallet | `GET /api/v1/wallet/micro-settlements` | Zero-fee cross-border escrow |
-| Budget | `GET /api/v1/budget/dashboard` | Restock forecasts, goal matches |
-| ASTRA Check | `GET /api/v1/astra-check/...` | Trust inspection, contradiction monitor |
-| Orders | `POST /api/v1/orders/{id}/dispute` | Sub-30-second AI dispute resolution |
-
-Full interactive reference: `http://localhost:8000/docs` (Swagger/OpenAPI) once the backend is running.
-
-
-
-## Screenshots
-
-### 🏠 Home
-
-![ASTRA AI Home](Screenshot/home.png)
-
-### 🔎 Multimodal Explore
-
-![ASTRA AI Explore](Screenshot/explore.png)
-
-### 🤖 AI Chatbot
-
-![ASTRA AI Chatbot](Screenshot/chatbot.png)
-
-### 🤝 A2A Autonomous Negotiation
-
-![ASTRA AI A2A Autonomous Negotiation](Screenshot/A2A%20Autonomous%20Negotiation.jpeg)
-
-### 🔐 Trust & Authenticity
-
-![ASTRA AI Trust Check](Screenshot/astracheck.png)
-
-### 💰 Wallet
-
-![ASTRA AI Wallet](Screenshot/wallet.png)
-
-## Roadmap
-
-The showcase engines are deterministic, reproducible simulations built for judging; the negotiation path optionally upgrades to a live Groq LLM when an API key is provided. Scoped, identified next steps toward production:
-
-- [ ] Real SMTP delivery for OTP email
-- [ ] Stripe Elements UI for card top-ups
-- [ ] Redis-backed distributed rate limiting
-- [ ] Scheduled off-site database backups
-- [ ] Server-side speech-to-text / real vision provider for open-vocabulary multimodal search
-
-None of these affect the integrity of the current test suite or demo.
-
-## Security
-
-This repository is public for hackathon submission purposes.
-
-- `.env` and `.env.*` are git-ignored; only placeholder `*.example` files (`.env.local.example`, `.env.production.example`, `astra-backend/.env.example`) are committed.
-- No API keys, tokens, passwords, or real credentials are present anywhere in the tracked codebase.
-- The dev OTP code documented above is a testing convenience only — it is inert whenever `APP_ENV=production` and is never a production credential.
-- Production configuration validators refuse a default `SECRET_KEY` and force debug/OTP-logging off outside development.
-
-## Team
-
-| Name | 
-|---|---|
-| Aisha Amir | 
-| Syeda Gullay Zahra | 
-
-## License
-
-Distributed under the MIT License. See [`LICENSE`](LICENSE) for details.
-
----
-
-<div align="center">
-
-**ASTRA AI — Shop Smarter. Spend Safer.**
-
-Built for the Alibaba Cloud AI Hackathon Pakistan 2026 · Alkhidmat Foundation Pakistan × Bano Qabil
-
-</div>
+1. Add native-speaker review and complete UI string catalogs before advertising full multilingual UX.
+2. Replace phrase-rule coverage with maintained locale-specific NLU, normalization and evaluation datasets; add genuine multilingual speech/streaming STT and TTS providers where needed.
+3. Measure voice latency end-to-end under realistic network/provider conditions; do not quote 0.23ms or sub-500ms from the current implementation.
+4. Connect persisted verified buyer reviews/photos to trust scoring and replace showcase hashes/seeded checks with verifiable cryptographic and image-analysis systems.
+5. Populate and validate delivery-route, phone-verification and payment-method fields before treating COD risk scores as COD-specific operational signals.
+6. Connect the confirmation payload to a configured, consented WhatsApp/voice provider; current action only prepares the prompt.
+7. Add catalogued room/furniture 3D models and seller origin-country entry; current AR and origin support is conditional on product data.
+8. Replace seeded market observations, static category averages and restock interval estimates with validated sources/models and confidence evaluation.
+9. Integrate and audit a real seller payout/settlement provider before enabling payouts. The displayed cross-border settlement route is a simulation.
+10. Review the consent voice UI as described above; use a real challenge-response speech/biometric design only after separate security and accessibility review.
