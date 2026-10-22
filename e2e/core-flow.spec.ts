@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, request, test, type Page } from "@playwright/test";
 
 // Tests other than the login flow itself start authenticated via the
 // global-setup storageState, keeping the suite under the backend's
@@ -15,13 +15,98 @@ async function loginViaUi(page: Page) {
   const digits = page.locator('input[inputmode="numeric"]');
   for (const [index, digit] of [..."123456"].entries()) await digits.nth(index).fill(digit);
   await page.getByRole("button", { name: /verify & continue/i }).click();
-  await expect(page).toHaveURL(/localhost:3000\/buyer\/dashboard$/);
+  // OTP completion preserves the authenticated user's role dashboard.
+  await expect(page).toHaveURL(/\/buyer\/dashboard$/, { timeout: 20_000 });
 }
 
 test.describe("ASTRA core browser flows", () => {
+  test("voice and image discovery stay in search and do not call financial actions", async ({ page }) => {
+    await page.addInitScript(() => {
+      class MockSpeechRecognition {
+        lang = "en-US";
+        interimResults = false;
+        continuous = false;
+        onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null = null;
+        onend: (() => void) | null = null;
+        onerror: (() => void) | null = null;
+        start() {
+          setTimeout(() => {
+            this.onresult?.({ results: [[{ transcript: "buy lenovo laptop" }]] });
+            this.onend?.();
+          }, 0);
+        }
+        stop() { this.onend?.(); }
+      }
+      Object.defineProperty(window, "SpeechRecognition", { value: MockSpeechRecognition });
+    });
+    await page.goto("/explore");
+
+    const financialRequests: string[] = [];
+    page.on("request", (request) => {
+      const path = new URL(request.url()).pathname;
+      if (/\/api\/v1\/(?:cart|checkout|wallet|negotiation|orders|approval|consent)(?:\/|$)/.test(path)) financialRequests.push(path);
+    });
+    const intentResponses: boolean[] = [];
+    page.on("response", async (response) => {
+      if (new URL(response.url()).pathname.endsWith("/explore/intent")) {
+        const body = await response.json() as { auto_checkout: boolean };
+        intentResponses.push(body.auto_checkout);
+      }
+    });
+
+    const searchBox = page.getByLabel("Roman Urdu mein search karein");
+    await searchBox.fill("wireless headphones");
+    await searchBox.press("Enter");
+    await expect(page.getByText("Sony WH-1000XM5").first()).toBeVisible({ timeout: 15_000 });
+
+    await page.getByRole("button", { name: "Voice search" }).click();
+    await expect(page.getByText(/ASTRA Intent: Search/i)).toBeVisible();
+    await expect.poll(() => intentResponses.length).toBe(1);
+    expect(intentResponses).toEqual([false]);
+    await expect(page).toHaveURL(/\/explore(?:\?.*)?$/);
+
+    await page.getByLabel("Image search").locator("input[type=file]").setInputFiles({
+      name: "headphones-product.jpg", mimeType: "image/jpeg", buffer: Buffer.from("search-only-image"),
+    });
+    await expect(page.getByText("Sony WH-1000XM5").first()).toBeVisible({ timeout: 15_000 });
+    expect(financialRequests).toEqual([]);
+  });
+
   test("user login and OTP verification", async ({ page }) => {
     await loginViaUi(page);
+    await expect(page.getByRole("dialog", { name: "Select your country or region" })).toBeVisible();
     await expect(page.getByText(/recommended for you/i).first()).toBeVisible();
+  });
+
+  test("authenticated regional selector exposes country and language choices", async ({ page }) => {
+    await page.goto("/buyer/dashboard");
+    const dialog = page.getByRole("dialog", { name: "Select your country or region" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: /China/ }).click();
+    await dialog.getByLabel("Preferred language").selectOption({ label: "Chinese (Mandarin / 中文)" });
+    const savedPreferences = page.waitForResponse((response) =>
+      response.url().includes("/api/v1/auth/me/preferences") && response.request().method() === "PATCH",
+    );
+    await dialog.getByRole("button", { name: "Continue" }).click();
+    const preferencesResponse = await savedPreferences;
+    expect(preferencesResponse.ok()).toBeTruthy();
+    await expect(dialog).toBeHidden();
+
+    await expect(page.getByLabel("Display currency")).toHaveValue("CNY");
+    await expect(page.getByLabel("Interface and voice language")).toHaveValue("Chinese (Mandarin / 中文)");
+    const regionButton = page.getByRole("button", { name: "Change country or region" });
+    await expect(regionButton).toContainText("CN");
+    await expect(regionButton).toContainText("CNY");
+
+    await page.reload();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByLabel("Display currency")).toHaveValue("CNY");
+    await expect(page.getByLabel("Interface and voice language")).toHaveValue("Chinese (Mandarin / 中文)");
+    await regionButton.click();
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText("Pakistan", { exact: true })).toBeVisible();
+    await expect(dialog.getByText("China", { exact: true })).toBeVisible();
+    await expect(dialog.getByLabel("Preferred language")).toHaveValue("Chinese (Mandarin / 中文)");
   });
 
   test("product detail opens AI Negotiator and receives a counter-offer", async ({ page }) => {
@@ -31,6 +116,28 @@ test.describe("ASTRA core browser flows", () => {
     await page.getByPlaceholder("Your offer (Rs.)").fill("100000");
     await page.getByRole("button", { name: /send offer/i }).click();
     await expect(page.getByText(/COUNTER|ACCEPTED/).first()).toBeVisible({ timeout: 15_000 });
+  });
+
+  test("buyer explicitly approves an accepted negotiation before checkout", async ({ page }) => {
+    const slug = "jbl-flip-6";
+    const productResponse = await page.request.get(`http://localhost:8000/api/v1/products/${slug}`);
+    expect(productResponse.ok()).toBeTruthy();
+    const product = await productResponse.json() as { price: number };
+    const acceptedUnitPrice = Math.round(product.price * 0.93 * 100) / 100;
+
+    await page.goto(`/product/${slug}`);
+    await page.getByPlaceholder("Shipping address for Buy Now").fill("42 Negotiated Checkout Road, Lahore");
+    await page.getByRole("button", { name: /AI Negotiate/i }).click();
+    await page.getByPlaceholder("Your offer (Rs.)").fill(String(acceptedUnitPrice));
+    await page.getByRole("button", { name: /send offer/i }).click();
+    await expect(page.getByText("Accepted offer, pending your approval")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(new RegExp(`Rs\\. ${acceptedUnitPrice.toLocaleString()} per unit × 1`))).toBeVisible();
+
+    await page.getByRole("button", { name: /Approve this price and continue to checkout/i }).click();
+    await expect(page.getByRole("dialog").getByText("Financial consent required")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/Buyer-approved negotiated price reserved/)).toBeVisible();
+    await expect(page.getByRole("dialog").getByText(`Rs. ${acceptedUnitPrice.toLocaleString()}`, { exact: false })).toBeVisible();
+    await page.getByRole("button", { name: "Close" }).click();
   });
 
   test("order details initiates escrow dispute and refund", async ({ page }) => {
@@ -47,6 +154,30 @@ test.describe("ASTRA core browser flows", () => {
     const consentId = (await consent.json()).consent_id as string;
     const approved = await page.request.post("http://localhost:8000/api/v1/approval/approve", { data: { order_ref: orderRef, consent_id: consentId } });
     expect(approved.ok()).toBeTruthy();
+
+    // Verify the same approved order appears in its actual seller's workspace.
+    // Use a separate API context so seller login cannot replace the buyer UI session.
+    const sellerEmail = deal.seller === "TechBazaar Official"
+      ? "seller@astra.ai"
+      : `${deal.seller.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}@astra.ai`;
+    const sellerContext = await request.newContext({ baseURL: "http://localhost:8000" });
+    try {
+      const sellerLogin = await sellerContext.post("/api/v1/auth/login", {
+        data: { email: sellerEmail, password: "demo1234" },
+      });
+      expect(sellerLogin.ok()).toBeTruthy();
+      const { otp_token: sellerOtp } = await sellerLogin.json() as { otp_token: string };
+      const sellerVerify = await sellerContext.post("/api/v1/auth/verify-otp", {
+        data: { otp_token: sellerOtp, code: "123456" },
+      });
+      expect(sellerVerify.ok()).toBeTruthy();
+      const sellerOrders = await sellerContext.get("/api/v1/seller/orders");
+      expect(sellerOrders.ok()).toBeTruthy();
+      expect(await sellerOrders.json()).toContainEqual(expect.objectContaining({ order_ref: orderRef }));
+    } finally {
+      await sellerContext.dispose();
+    }
+
     await page.goto("/orders");
     await page.getByRole("button", { name: new RegExp(orderRef) }).click();
     await page.getByRole("button", { name: /Initiate AI Dispute/i }).click();

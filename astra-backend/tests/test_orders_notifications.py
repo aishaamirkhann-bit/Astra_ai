@@ -1,3 +1,11 @@
+from fastapi.testclient import TestClient
+
+from app.core.security import create_access_token
+from app.main import app
+from app.models.user import User
+from app.core.database import SessionLocal
+
+
 def test_order_hub_detail_and_reorder_contract(auth_client) -> None:
     orders = auth_client.get("/api/v1/orders")
     assert orders.status_code == 200
@@ -11,6 +19,20 @@ def test_order_hub_detail_and_reorder_contract(auth_client) -> None:
     reordered = auth_client.post(f"/api/v1/orders/{order['order_ref']}/reorder")
     assert reordered.status_code == 200
     assert reordered.json()["cart_total_quantity"] >= order["quantity"]
+
+
+def test_another_buyer_cannot_read_or_mutate_private_order(auth_client) -> None:
+    orders = auth_client.get("/api/v1/orders").json()
+    assert orders
+    order_ref = orders[0]["order_ref"]
+    with SessionLocal() as db:
+        other_buyer = db.query(User).filter(User.email != "aisha@astra.ai", User.role == "buyer").first()
+        assert other_buyer is not None
+        token = create_access_token(str(other_buyer.id))
+    with TestClient(app, headers={"Authorization": f"Bearer {token}"}) as other_client:
+        assert other_client.get(f"/api/v1/orders/{order_ref}").status_code == 404
+        assert other_client.post(f"/api/v1/orders/{order_ref}/reverse").status_code == 404
+        assert other_client.post(f"/api/v1/orders/{order_ref}/dispute", json={"reason": "item_damaged"}).status_code == 404
 
 
 def test_notification_center_unifies_categories_and_mark_read(auth_client) -> None:

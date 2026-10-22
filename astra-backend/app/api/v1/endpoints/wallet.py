@@ -15,6 +15,7 @@ from app.realtime.wallet_ws import manager
 from app.schemas.goal import WalletDetailOut, WalletLedgerEntryOut, WalletOut, WalletTopUpRequest, WalletWithdrawRequest
 from app.schemas.wallet import ConsentAuthorizationRequest, ConsentAuthorizationResponse, RemittanceContextOut
 from app.services import astra_agents
+from app.services.checkout_fsm import _money, checkout_snapshot_hash, order_snapshot_hash
 from app.utils.helpers import as_aware_utc, format_pkr
 
 router = APIRouter(prefix="/wallet", tags=["Wallet & Consent"])
@@ -33,7 +34,7 @@ def _consent_subject(db: Session, user: User, payload: ConsentAuthorizationReque
             raise HTTPException(status_code=404, detail="Order not found")
         if order.status != OrderStatus.PENDING_APPROVAL:
             raise HTTPException(status_code=409, detail="Order is no longer awaiting approval")
-        if abs(order.price - payload.amount) > 0.01:
+        if _money(order.price) != _money(payload.amount):
             raise HTTPException(status_code=409, detail="Consent amount does not match the order total")
         return order, None
 
@@ -47,7 +48,7 @@ def _consent_subject(db: Session, user: User, payload: ConsentAuthorizationReque
         raise HTTPException(status_code=409, detail="Checkout session is no longer awaiting consent")
     if as_aware_utc(checkout.expires_at) <= datetime.now(timezone.utc):
         raise HTTPException(status_code=410, detail="Checkout session expired")
-    if abs(checkout.total - payload.amount) > 0.01:
+    if _money(checkout.total) != _money(payload.amount):
         raise HTTPException(status_code=409, detail="Consent amount does not match the checkout total")
     return None, checkout
 
@@ -107,6 +108,11 @@ async def withdraw(payload: WalletWithdrawRequest, db: Session = Depends(get_db)
 @router.post("/authorize-consent", response_model=ConsentAuthorizationResponse)
 def authorize_consent(payload: ConsentAuthorizationRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     order, checkout = _consent_subject(db, current_user, payload)
+    if order:
+        snapshot_hash = order_snapshot_hash(order)
+    else:
+        orders = db.query(Order).filter(Order.checkout_session_id == checkout.id).order_by(Order.id).all()
+        snapshot_hash = checkout_snapshot_hash(checkout, orders)
     subject_matches = (
         FinancialConsentLog.reference_order_id == order.id
         if order
@@ -125,6 +131,8 @@ def authorize_consent(payload: ConsentAuthorizationRequest, db: Session = Depend
             status="Approved",
             reference_order_id=order.id if order else None,
             reference_checkout_id=checkout.id if checkout else None,
+            order_snapshot_hash=snapshot_hash,
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
         )
         db.add(consent)
         db.commit()
@@ -142,6 +150,8 @@ def authorize_consent(payload: ConsentAuthorizationRequest, db: Session = Depend
             reference_checkout_id=checkout.id if checkout else None,
             otp_code_hash=hash_otp(code),
             otp_expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            order_snapshot_hash=snapshot_hash,
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
         )
         db.add(consent)
         db.commit()
@@ -158,8 +168,16 @@ def authorize_consent(payload: ConsentAuthorizationRequest, db: Session = Depend
         raise HTTPException(status_code=404, detail="Active OTP challenge not found")
     if consent.otp_attempts >= 5:
         raise HTTPException(status_code=429, detail="Too many OTP attempts")
-    if abs(consent.amount - payload.amount) > 0.01 or as_aware_utc(consent.otp_expires_at) <= datetime.now(timezone.utc):
+    if _money(consent.amount) != _money(payload.amount) or as_aware_utc(consent.otp_expires_at) <= datetime.now(timezone.utc):
         raise HTTPException(status_code=410, detail="OTP challenge expired or amount changed")
+    current_snapshot = order_snapshot_hash(order) if order else checkout_snapshot_hash(
+        checkout,
+        db.query(Order).filter(Order.checkout_session_id == checkout.id).order_by(Order.id).all(),
+    )
+    if not consent.order_snapshot_hash or consent.order_snapshot_hash != current_snapshot:
+        consent.status = "Rejected"
+        db.commit()
+        raise HTTPException(status_code=409, detail="Order details changed; request fresh consent")
     consent.otp_attempts += 1
     if not verify_otp(payload.otp_code, consent.otp_code_hash):
         db.commit()

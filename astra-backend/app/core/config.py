@@ -67,7 +67,14 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("FRONTEND_URL", "FRONTEND_ORIGIN"),
     )
 
-    APPROVAL_WINDOW_SECONDS: int = 60
+    # --- WhatsApp Cloud API adapter (empty credentials disable integration) ---
+    WHATSAPP_VERIFY_TOKEN: str = ""
+    WHATSAPP_APP_SECRET: str = ""
+    WHATSAPP_ACCESS_TOKEN: str = ""
+    WHATSAPP_PHONE_NUMBER_ID: str = ""
+    WHATSAPP_API_VERSION: str = "v26.0"
+
+    APPROVAL_WINDOW_SECONDS: int = 30
     REVERSAL_MONITOR_INTERVAL_SECONDS: int = 5
     CHECKOUT_SESSION_TTL_SECONDS: int = 600
 

@@ -5,6 +5,7 @@ import { Bot, Handshake, Loader2, Radio, X } from "lucide-react";
 import { getA2aNegotiationWebSocketUrl, submitNegotiationOffer } from "@/lib/api";
 import { showToast } from "@/lib/toast";
 import type { NegotiationRound } from "@/lib/api";
+import { getSavedLocale } from "@/lib/region";
 
 const MAX_ROUNDS = 6;
 
@@ -16,8 +17,9 @@ interface A2aParams {
   delay_threshold_ms: number;
   seller_ask: number;
   seller_floor: number;
-  market_average: number;
+  market_average: number | null;
   max_rounds: number;
+  buyer_preferences?: Record<string, string | string[]>;
 }
 
 interface A2aFeedEntry {
@@ -28,24 +30,36 @@ interface A2aFeedEntry {
   message: string;
 }
 
-/** Real-time buyer/seller agent counter-offer room + A2A live negotiation. */
+/** Deterministic buyer/seller negotiation room; this flow does not call an LLM. */
 export default function NegotiatorModal({
   open,
   productId,
   productName,
   listPrice,
+  quantity,
+  size,
+  color,
+  storage,
+  onBuyerApprove,
   onClose,
 }: {
   open: boolean;
   productId: string;
   productName: string;
   listPrice: number;
+  quantity: number;
+  size: string;
+  color: string;
+  storage: string;
+  onBuyerApprove: (sessionId: number) => Promise<void>;
   onClose: () => void;
 }) {
   const [rounds, setRounds] = useState<NegotiationRound[]>([]);
   const [offer, setOffer] = useState("");
   const [autoMode, setAutoMode] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [approvalBusy, setApprovalBusy] = useState(false);
+  const [approvalError, setApprovalError] = useState("");
   const [settled, setSettled] = useState<NegotiationRound | null>(null);
   const sessionIdRef = useRef<number | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -54,7 +68,7 @@ export default function NegotiatorModal({
   const [a2aParams, setA2aParams] = useState<A2aParams | null>(null);
   const [a2aFeed, setA2aFeed] = useState<A2aFeedEntry[]>([]);
   const [a2aProgress, setA2aProgress] = useState(0);
-  const [a2aResult, setA2aResult] = useState<{ finalPrice: number; rounds: number; savings: number } | null>(null);
+  const [a2aResult, setA2aResult] = useState<{ sessionId: number; finalPrice: number; rounds: number; savings: number; quantity: number } | null>(null);
   const a2aSocketRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -64,6 +78,8 @@ export default function NegotiatorModal({
       setSettled(null);
       sessionIdRef.current = null;
       setBusy(false);
+      setApprovalBusy(false);
+      setApprovalError("");
       setA2aActive(false);
       setA2aParams(null);
       setA2aFeed([]);
@@ -85,6 +101,11 @@ export default function NegotiatorModal({
       const result = await submitNegotiationOffer(productId, {
         offer_price: offerPrice,
         round,
+        quantity,
+        size,
+        color,
+        storage,
+        locale: getSavedLocale(),
         ...(sessionIdRef.current ? { session_id: sessionIdRef.current } : {}),
       });
       sessionIdRef.current = result.session_id;
@@ -133,12 +154,13 @@ export default function NegotiatorModal({
     setA2aFeed([]);
     const socket = new WebSocket(getA2aNegotiationWebSocketUrl(productId));
     a2aSocketRef.current = socket;
+    socket.onopen = () => socket.send(JSON.stringify({ type: "start", quantity, size, color, storage, locale: getSavedLocale() }));
     socket.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data) as Record<string, unknown>;
         if (payload.type === "a2a_started") {
           setA2aParams(payload.params as A2aParams);
-          setA2aFeed((feed) => [...feed, { key: feed.length, side: "system", label: "A2A channel", message: "Buyer & seller agents connected — target parameters exchanged." }]);
+          setA2aFeed((feed) => [...feed, { key: feed.length, side: "system", label: "A2A channel", message: "Deterministic buyer and seller rules started; wallet cap and listing-based floor are in use." }]);
         } else if (payload.type === "buyer_offer" || payload.type === "seller_counter") {
           const buyer = payload.type === "buyer_offer";
           setA2aProgress(Number(payload.progress ?? 0));
@@ -151,9 +173,12 @@ export default function NegotiatorModal({
           }]);
         } else if (payload.type === "deal_settled") {
           setA2aProgress(1);
-          setA2aResult({ finalPrice: Number(payload.final_price), rounds: Number(payload.rounds), savings: Number(payload.savings_vs_list) });
+          setA2aResult({ sessionId: Number(payload.session_id), finalPrice: Number(payload.final_price), rounds: Number(payload.rounds), savings: Number(payload.savings_vs_list), quantity: Number(payload.quantity ?? quantity) });
           setA2aActive(false);
           showToast(`A2A deal settled at Rs. ${Number(payload.final_price).toLocaleString()}!`, "success");
+        } else if (payload.type === "deal_rejected") {
+          setA2aActive(false);
+          showToast(String(payload.reason ?? "The agents could not agree within the available budget."), "error");
         }
       } catch {
         // Ignore malformed frames — the room keeps streaming.
@@ -164,6 +189,18 @@ export default function NegotiatorModal({
       setA2aActive(false);
       showToast("A2A negotiation channel unavailable.", "error");
     };
+  };
+
+  const approveOffer = async (sessionId: number) => {
+    setApprovalBusy(true);
+    setApprovalError("");
+    try {
+      await onBuyerApprove(sessionId);
+    } catch (cause) {
+      setApprovalError(cause instanceof Error ? cause.message : "Could not approve this offer for checkout.");
+    } finally {
+      setApprovalBusy(false);
+    }
   };
 
   return (
@@ -193,17 +230,25 @@ export default function NegotiatorModal({
             )}
             {a2aResult && (
               <span className="rounded-full bg-signal-good/10 px-2.5 py-1 text-[10px] font-bold text-signal-good">
-                DEAL SETTLED · Rs. {a2aResult.finalPrice.toLocaleString()}
+                OFFER ACCEPTED · Rs. {a2aResult.finalPrice.toLocaleString()} each
               </span>
             )}
           </div>
           {a2aParams && (
-            <div className="mt-2 grid grid-cols-2 gap-1.5 text-[9px] text-ink-500 sm:grid-cols-4">
-              <span className="rounded-lg bg-base-800 px-2 py-1">Buyer budget <b className="text-ink-100">Rs. {a2aParams.buyer_budget.toLocaleString()}</b></span>
-              <span className="rounded-lg bg-base-800 px-2 py-1">Delay threshold <b className="text-ink-100">{a2aParams.delay_threshold_ms}ms</b></span>
-              <span className="rounded-lg bg-base-800 px-2 py-1">Seller floor <b className="text-ink-100">Rs. {a2aParams.seller_floor.toLocaleString()}</b></span>
-              <span className="rounded-lg bg-base-800 px-2 py-1">Max rounds <b className="text-ink-100">{a2aParams.max_rounds}</b></span>
-            </div>
+            <>
+              <div className="mt-2 grid grid-cols-2 gap-1.5 text-[9px] text-ink-500 sm:grid-cols-4">
+                <span className="rounded-lg bg-base-800 px-2 py-1">Buyer budget <b className="text-ink-100">Rs. {a2aParams.buyer_budget.toLocaleString()}</b></span>
+                <span className="rounded-lg bg-base-800 px-2 py-1">Delay threshold <b className="text-ink-100">{a2aParams.delay_threshold_ms}ms</b></span>
+                <span className="rounded-lg bg-base-800 px-2 py-1">Modeled floor <b className="text-ink-100">Rs. {a2aParams.seller_floor.toLocaleString()}</b></span>
+                <span className="rounded-lg bg-base-800 px-2 py-1">Max rounds <b className="text-ink-100">{a2aParams.max_rounds}</b></span>
+              </div>
+              {a2aParams.buyer_preferences && Object.keys(a2aParams.buyer_preferences).length > 0 && (
+                <p className="mt-2 text-[10px] text-ink-500">
+                  Advisory shopping preferences (not spending consent): {Object.entries(a2aParams.buyer_preferences)
+                    .map(([key, value]) => `${key.replaceAll("_", " ")}: ${Array.isArray(value) ? value.join(", ") : value}`).join(" · ")}
+                </p>
+              )}
+            </>
           )}
           {(a2aActive || a2aFeed.length > 0) && (
             <>
@@ -226,13 +271,36 @@ export default function NegotiatorModal({
                 ))}
                 {a2aResult && (
                   <li className="rounded-lg bg-signal-good/10 px-2 py-1.5 text-[10px] font-semibold text-signal-good">
-                    Handshake complete in {a2aResult.rounds} rounds — saved Rs. {a2aResult.savings.toLocaleString()} off list price.
+                    Offer only; buyer checkout approval is still required. {a2aResult.quantity} unit(s), total Rs. {(a2aResult.finalPrice * a2aResult.quantity).toLocaleString()}. Handshake: {a2aResult.rounds} rounds; estimated savings Rs. {a2aResult.savings.toLocaleString()} per unit.
                   </li>
                 )}
               </ul>
             </>
           )}
         </div>
+
+        {(settled?.status === "accepted" || a2aResult) && (
+          <div className="mt-3 rounded-xl border border-emerald-400/30 bg-emerald-400/5 p-3">
+            {settled?.status === "accepted" ? (
+              <>
+                <p className="text-xs font-semibold text-emerald-300">Accepted offer, pending your approval</p>
+                <p className="mt-1 text-[11px] text-ink-200">Rs. {(settled.final_price ?? 0).toLocaleString()} per unit × {quantity} = Rs. {((settled.final_price ?? 0) * quantity).toLocaleString()}</p>
+                <button onClick={() => void approveOffer(settled.session_id)} disabled={approvalBusy || busy} className="mt-2 w-full rounded-lg bg-astra-gradient px-3 py-2 text-xs font-bold text-white disabled:opacity-50">
+                  {approvalBusy ? "Preparing approved checkout…" : "Approve this price and continue to checkout"}
+                </button>
+              </>
+            ) : a2aResult ? (
+              <>
+                <p className="text-xs font-semibold text-emerald-300">A2A offer accepted, pending your approval</p>
+                <p className="mt-1 text-[11px] text-ink-200">Rs. {a2aResult.finalPrice.toLocaleString()} per unit × {a2aResult.quantity} = Rs. {(a2aResult.finalPrice * a2aResult.quantity).toLocaleString()}</p>
+                <button onClick={() => void approveOffer(a2aResult.sessionId)} disabled={approvalBusy} className="mt-2 w-full rounded-lg bg-astra-gradient px-3 py-2 text-xs font-bold text-white disabled:opacity-50">
+                  {approvalBusy ? "Preparing approved checkout…" : "Approve this price and continue to checkout"}
+                </button>
+              </>
+            ) : null}
+            {approvalError && <p role="alert" className="mt-2 text-xs text-rose-400">{approvalError}</p>}
+          </div>
+        )}
 
         <div ref={scrollRef} className="scroll-thin mt-4 flex min-h-[180px] flex-1 flex-col gap-3 overflow-y-auto pr-1">
           {rounds.length === 0 && !busy && (

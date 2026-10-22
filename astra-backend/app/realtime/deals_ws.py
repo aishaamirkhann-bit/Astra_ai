@@ -42,7 +42,7 @@ manager = ConnectionManager()
 
 @router.websocket("/ws/deals")
 async def deals_websocket(websocket: WebSocket) -> None:
-    token = websocket.query_params.get("token") or websocket.cookies.get(settings.AUTH_COOKIE_NAME)
+    token = websocket.cookies.get(settings.AUTH_COOKIE_NAME)
     if not token or decode_access_token(token) is None:
         await websocket.close(code=1008, reason="Valid access token required")
         return

@@ -172,6 +172,7 @@ def _product(
         "id": _slugify(normalized_title),
         "title": normalized_title,
         "category": normalized_category,
+        "origin_country": "PK",
         "price": float(normalized_price),
         "rating": normalized_rating,
         "total_reviews": _integer(total_reviews),

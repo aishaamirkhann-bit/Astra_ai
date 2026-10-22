@@ -2,16 +2,15 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { ShieldCheck, Mail, Loader2, ArrowRight } from "lucide-react";
 import { loginUser } from "@/lib/api";
 import { storePendingOtp, storePostAuthRedirect } from "@/lib/auth";
 import PasswordInput from "@/components/auth/PasswordInput";
 import ForgotPasswordModal from "@/components/auth/ForgotPasswordModal";
 import GoogleSignInButton from "@/components/auth/GoogleSignInButton";
+import { getSavedCountry } from "@/lib/region";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -43,7 +42,9 @@ export default function LoginPage() {
       storePendingOtp(otpChallenge);
       const next = new URLSearchParams(window.location.search).get("next");
       if (next) storePostAuthRedirect(next);
-      router.push("/verify-otp");
+      // Force a document navigation after persisting the OTP challenge so the
+      // verification page always reads it from the same-origin sessionStorage.
+      window.location.assign("/verify-otp");
     } catch (requestError) {
       setError((requestError as Error).message || "Invalid email or password. Try again.");
     } finally {

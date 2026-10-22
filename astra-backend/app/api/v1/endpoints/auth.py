@@ -24,8 +24,8 @@ from urllib.parse import urlencode
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel
-from sqlalchemy.exc import IntegrityError
+from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -61,6 +61,11 @@ from app.utils.helpers import as_aware_utc
 from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
+
+
+class RegionalPreferences(BaseModel):
+    country: Literal["PK", "CN", "IR", "AE"]
+    preferred_language: str = Field(min_length=2, max_length=40)
 
 # Local-development convenience: this code is accepted as a valid OTP only
 # when APP_ENV != "production". Email delivery is unreliable in dev, so this
@@ -135,10 +140,10 @@ def _google_error_redirect(error: str) -> RedirectResponse:
     return redirect
 
 
-def _google_state(role: Literal["buyer", "seller"] = "buyer") -> str:
+def _google_state(role: Literal["buyer", "seller"] = "buyer", country: Literal["PK", "CN", "IR", "AE"] = "PK") -> str:
     issued_at = str(int(time.time()))
     nonce = secrets.token_urlsafe(24)
-    payload = f"{issued_at}.{nonce}.{role}"
+    payload = f"{issued_at}.{nonce}.{role}.{country}"
     signature = hmac.new(settings.SECRET_KEY.encode(), payload.encode(), hashlib.sha256).digest()
     encoded = base64.urlsafe_b64encode(signature).decode().rstrip("=")
     return f"{payload}.{encoded}"
@@ -146,24 +151,77 @@ def _google_state(role: Literal["buyer", "seller"] = "buyer") -> str:
 
 def _valid_google_state(state: str) -> bool:
     parts = state.split(".")
-    if len(parts) != 4 or parts[2] not in {"buyer", "seller"}:
+    if len(parts) != 5 or parts[2] not in {"buyer", "seller"} or parts[3] not in {"PK", "CN", "IR", "AE"}:
         return False
-    issued_at, nonce, role, signature = parts
+    issued_at, nonce, role, country, signature = parts
     try:
         if abs(time.time() - int(issued_at)) > 600:
             return False
     except ValueError:
         return False
-    payload = f"{issued_at}.{nonce}.{role}"
+    payload = f"{issued_at}.{nonce}.{role}.{country}"
     expected = base64.urlsafe_b64encode(hmac.new(settings.SECRET_KEY.encode(), payload.encode(), hashlib.sha256).digest()).decode().rstrip("=")
     return hmac.compare_digest(signature, expected)
 
 
 def _google_state_role(state: str) -> Literal["buyer", "seller"]:
     parts = state.split(".")
-    if len(parts) == 4 and parts[2] == "seller":
+    if len(parts) == 5 and parts[2] == "seller":
         return "seller"
     return "buyer"
+
+
+def _google_state_country(state: str) -> Literal["PK", "CN", "IR", "AE"]:
+    parts = state.split(".")
+    if len(parts) == 5 and parts[3] in {"PK", "CN", "IR", "AE"}:
+        return parts[3]  # The state signature is verified before this value is used.
+    return "PK"
+
+
+def _local_demo_google_login(role: Literal["buyer", "seller"], country: Literal["PK", "CN", "IR", "AE"], db: Session) -> RedirectResponse:
+    """Create a clearly marked local demo session when external OAuth is absent.
+
+    This is intentionally unavailable in production and does not assert that
+    Google authenticated the demo identity.
+    """
+    email = f"demo.google.{role}.{country.lower()}@astra.local"
+    user = db.query(User).filter(User.email == email).first()
+    if user is None:
+        user = User(
+            name=f"Astra {country} Demo {role.title()}",
+            email=email,
+            hashed_password=hash_password(secrets.token_urlsafe(32)),
+            preferred_language="Roman Urdu" if country == "PK" else "English",
+            role=role,
+            country=country,
+        )
+        try:
+            db.add(user)
+            db.flush()
+            db.add(Wallet(user_id=user.id, available_balance=0))
+            if role == "seller":
+                db.add(SellerProfile(user_id=user.id, role="seller", compliance_status="pending", total_revenue=0))
+                db.flush()
+                db.add(SellerWallet(seller_id=user.id, available_balance=0, pending_payouts=0))
+            db.commit()
+            db.refresh(user)
+        except SQLAlchemyError:
+            db.rollback()
+            return _google_error_redirect("account_creation_failed")
+
+    token = create_access_token(subject=str(user.id), extra_claims={"role": user.role})
+    redirect = RedirectResponse(f"{settings.FRONTEND_ORIGIN.rstrip('/')}/auth/callback?mode=local-demo")
+    redirect.set_cookie(
+        key=settings.AUTH_COOKIE_NAME,
+        value=token,
+        httponly=True,
+        secure=settings.APP_ENV == "production",
+        samesite=settings.AUTH_COOKIE_SAMESITE,
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        path="/",
+        domain=settings.AUTH_COOKIE_DOMAIN,
+    )
+    return redirect
 
 
 def _issue_otp(db: Session, user: User) -> OtpRequiredResponse:
@@ -207,15 +265,17 @@ def _clear_auth_cookie(response: Response) -> None:
 
 
 @router.get("/google/start")
-def google_start(role: Literal["buyer", "seller"] = "buyer"):
+def google_start(role: Literal["buyer", "seller"] = "buyer", country: Literal["PK", "CN", "IR", "AE"] = "PK", db: Session = Depends(get_db)):
     if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
+        if settings.APP_ENV.lower() in {"development", "dev", "demo"}:
+            return _local_demo_google_login(role, country, db)
         return _google_error_redirect("not_configured")
     params = {
         "client_id": settings.GOOGLE_CLIENT_ID,
         "redirect_uri": settings.GOOGLE_REDIRECT_URI,
         "response_type": "code",
         "scope": "openid email profile",
-        "state": _google_state(role),
+        "state": _google_state(role, country),
         "access_type": "online",
         "prompt": "select_account",
     }
@@ -313,6 +373,7 @@ def google_callback(
             hashed_password=hash_password(secrets.token_urlsafe(32)),
             preferred_language="Roman Urdu",
             role=_google_state_role(state),
+            country=_google_state_country(state),
         )
         try:
             db.add(user)
@@ -328,7 +389,10 @@ def google_callback(
             db.rollback()
             user = db.query(User).filter(User.email.ilike(email)).first()
             if user is None:
-                raise
+                return _google_error_redirect("account_creation_failed")
+        except SQLAlchemyError:
+            db.rollback()
+            return _google_error_redirect("account_creation_failed")
 
     token = create_access_token(subject=str(user.id), extra_claims={"role": user.role})
     redirect = RedirectResponse(f"{settings.primary_frontend_url}/auth/callback")
@@ -361,6 +425,7 @@ def register(payload: RegisterRequest, response: Response, db: Session = Depends
         email=email,
         hashed_password=hash_password(payload.password),
         preferred_language=payload.preferred_language,
+        country=payload.country,
         role=payload.role,
     )
     db.add(user)
@@ -515,6 +580,23 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
 
 @router.get("/me", response_model=UserOut)
 def me(current_user: User = Depends(get_current_user)):
+    return current_user
+
+
+@router.patch("/me/preferences", response_model=UserOut)
+def update_regional_preferences(payload: RegionalPreferences, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    supported = {
+        "PK": {"English", "Urdu", "Roman Urdu", "Punjabi", "Pashto", "Sindhi"},
+        "CN": {"English", "Chinese (Mandarin / 中文)"},
+        "IR": {"English", "Persian (Farsi / فارسی)"},
+        "AE": {"English", "Arabic (العربية)"},
+    }
+    if payload.preferred_language not in supported[payload.country]:
+        raise HTTPException(status_code=422, detail="Choose a language available in the selected region.")
+    current_user.country = payload.country
+    current_user.preferred_language = payload.preferred_language
+    db.commit()
+    db.refresh(current_user)
     return current_user
 
 

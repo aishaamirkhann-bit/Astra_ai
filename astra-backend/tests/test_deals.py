@@ -86,7 +86,9 @@ def test_cart_is_persisted_for_current_user(auth_client) -> None:
 def test_deal_reservation_creates_approval_order_and_cancel_releases_stock(auth_client) -> None:
     deal = auth_client.get("/api/v1/deals", params={"page_size": 100}).json()["items"]
     deal = next(item for item in deal if item["stock_remaining"] >= 1)
-    before = deal["stock_remaining"]
+    with SessionLocal() as db:
+        product = db.query(Product).filter(Product.id == deal["slug"]).one()
+        before_product_stock = product.stock_count
     reserved = auth_client.post(f"/api/v1/deals/{deal['id']}/reserve", json={"quantity": 1})
     assert reserved.status_code == 200
     payload = reserved.json()
@@ -95,7 +97,7 @@ def test_deal_reservation_creates_approval_order_and_cancel_releases_stock(auth_
     cancelled = auth_client.post("/api/v1/approval/cancel", json={"order_ref": payload["order_ref"]})
     assert cancelled.status_code == 200
     refreshed = auth_client.get(f"/api/v1/deals/{deal['id']}/details").json()
-    assert refreshed["stock_remaining"] == before
+    assert refreshed["stock_remaining"] == before_product_stock
 
     with SessionLocal() as db:
         order = db.query(Order).filter(Order.order_ref == payload["order_ref"]).first()
@@ -143,7 +145,7 @@ def test_concurrent_reservations_cannot_oversell(auth_client) -> None:
 def test_approved_deal_is_listed_and_can_be_reversed(auth_client) -> None:
     deal = auth_client.get("/api/v1/deals", params={"page_size": 100}).json()["items"]
     balance = auth_client.get("/api/v1/wallet").json()["available_balance"]
-    deal = next(item for item in deal if item["stock_remaining"] >= 1 and item["price"] <= balance)
+    deal = next(item for item in deal if item["stock_remaining"] >= 1 and item["price"] <= min(balance, 108000))
     before = deal["stock_remaining"]
     reserved = auth_client.post(f"/api/v1/deals/{deal['id']}/reserve", json={"quantity": 1}).json()
     with SessionLocal() as db:

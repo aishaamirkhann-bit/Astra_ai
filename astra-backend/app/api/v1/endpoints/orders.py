@@ -1,7 +1,8 @@
 from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -10,6 +11,8 @@ from app.core.config import settings
 from app.models.cart import CartItem
 from app.models.notification import Notification
 from app.models.order import Order, OrderStatus
+from app.models.order_return import OrderReturnRequest
+from app.models.product import Product
 from app.models.pipeline import AuditLog
 from app.models.user import User
 from app.models.wallet import FinancialConsentLog
@@ -19,6 +22,7 @@ from app.schemas.order import OrderDetailOut, OrderOut, ReorderResponse, Reverse
 from app.services import astra_agents
 from app.services.audit import record_audit
 from app.services.checkout_fsm import confirm_delivery, refund_reversible_order
+from app.services.order_operations import RETURN_WINDOW_DAYS, return_eligibility
 from app.utils.helpers import as_aware_utc
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
@@ -66,6 +70,43 @@ def list_orders(db: Session = Depends(get_db), current_user: User = Depends(get_
         reversal_window_seconds=settings.APPROVAL_WINDOW_SECONDS, placed_at=order.created_at,
         image=order.product.image_url,
     ) for order in orders]
+
+
+@router.get("/track")
+def track_orders(
+    query: str = "",
+    order_ref: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Read-only, buyer-scoped fulfillment status and timeline."""
+    orders_query = db.query(Order).filter(Order.user_id == current_user.id)
+    if order_ref:
+        orders_query = orders_query.filter(Order.order_ref == order_ref)
+    elif query:
+        hint = query.lower()
+        if "shirt" in hint or "qameez" in hint or "kameez" in hint:
+            orders_query = orders_query.join(Order.product).filter(or_(
+                Product.title.ilike("%shirt%"),
+                Product.category.ilike("%cloth%"),
+                Product.category.ilike("%dress%"),
+            ))
+    orders = orders_query.order_by(Order.created_at.desc()).limit(20).all()
+    if order_ref and not orders:
+        raise HTTPException(status_code=404, detail="Order not found")
+    return {
+        "orders": [
+            {
+                "order_ref": order.order_ref,
+                "product_name": order.product.title,
+                "status": order.status.value,
+                "placed_at": as_aware_utc(order.created_at).isoformat() if order.created_at else None,
+                "delivered_at": as_aware_utc(order.delivered_at).isoformat() if order.delivered_at else None,
+                "timeline": _order_tracking_timeline(order),
+            }
+            for order in orders
+        ]
+    }
 
 
 @router.get("/{order_ref}", response_model=OrderDetailOut)
@@ -147,6 +188,73 @@ DISPUTE_SEVERITY = {
 
 class DisputeRequest(BaseModel):
     reason: str
+
+
+class ReturnRequestIn(BaseModel):
+    order_ref: str = Field(min_length=4, max_length=30)
+    reason: str = Field(min_length=5, max_length=500)
+    request_type: Literal["return", "exchange"] = "return"
+    confirmed: bool = False
+
+
+def _order_tracking_timeline(order: Order) -> list[dict[str, str | None]]:
+    status = order.status
+    placed_at = as_aware_utc(order.created_at).isoformat() if order.created_at else None
+    shipped_at = as_aware_utc(order.shipped_at).isoformat() if order.shipped_at else None
+    delivered_at = as_aware_utc(order.delivered_at).isoformat() if order.delivered_at else None
+    return [
+        {"key": "processing", "label": "Processing", "status": "done" if status != OrderStatus.CANCELLED else "cancelled", "at": placed_at},
+        {"key": "shipped", "label": "Shipped", "status": "done" if status in {OrderStatus.SHIPPED, OrderStatus.DELIVERED} else "pending", "at": shipped_at},
+        {"key": "out_for_delivery", "label": "Out for Delivery", "status": "done" if status == OrderStatus.DELIVERED else "pending", "at": delivered_at if status == OrderStatus.DELIVERED else None},
+        {"key": "delivered", "label": "Delivered", "status": "done" if status == OrderStatus.DELIVERED else "pending", "at": delivered_at},
+    ]
+
+
+@router.post("/return-request", status_code=201)
+def create_return_request(
+    payload: ReturnRequestIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Record a confirmed request for human review. This never refunds or edits an order."""
+    if not payload.confirmed:
+        raise HTTPException(status_code=409, detail="Review the order and confirm the return request first")
+    order = db.query(Order).filter(
+        Order.order_ref == payload.order_ref,
+        Order.user_id == current_user.id,
+    ).with_for_update().first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    eligible, explanation = return_eligibility(
+        order.status.value,
+        order.delivered_at,
+    )
+    if not eligible:
+        raise HTTPException(status_code=409, detail=explanation)
+    pending = db.query(OrderReturnRequest).filter(
+        OrderReturnRequest.order_id == order.id,
+        OrderReturnRequest.user_id == current_user.id,
+        OrderReturnRequest.status == "pending_review",
+    ).first()
+    if pending:
+        return {"request_id": pending.id, "order_ref": order.order_ref, "request_type": pending.request_type, "status": pending.status, "message": f"Your {pending.request_type} request is already awaiting review."}
+    request = OrderReturnRequest(
+        order_id=order.id,
+        user_id=current_user.id,
+        request_type=payload.request_type,
+        reason=payload.reason.strip(),
+    )
+    db.add(request)
+    db.commit()
+    db.refresh(request)
+    return {
+        "request_id": request.id,
+        "order_ref": order.order_ref,
+        "request_type": request.request_type,
+        "status": request.status,
+        "message": f"{request.request_type.title()} request submitted for review. No refund or order change has occurred.",
+        "return_window_days": RETURN_WINDOW_DAYS,
+    }
 
 
 @router.get("/{order_ref}/timeline")

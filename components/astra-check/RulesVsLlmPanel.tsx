@@ -49,9 +49,9 @@ export default function RulesVsLlmPanel() {
             <p className="text-xs font-semibold text-ink-100">LLM Explanation Layer</p>
           </div>
           <p className="text-[11px] leading-relaxed text-ink-300">
-            "This Samsung Galaxy S25 Ultra fits comfortably within your remaining budget, the
+            &quot;This Samsung Galaxy S25 Ultra fits comfortably within your remaining budget, the
             seller has a strong trust history, and the price sits below the market average for
-            this model. No contradictions were found with your active Laptop savings goal."
+            this model. No contradictions were found with your active Laptop savings goal.&quot;
           </p>
           <p className="mt-3 text-[10px] uppercase tracking-wide text-ink-700">
             Generated after rules pass — cannot change the verdict

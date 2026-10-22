@@ -3,9 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Camera, ImagePlus, LoaderCircle, Mic, Plus, Send, ShieldHalf, Square, X } from "lucide-react";
-import { getChatHistory, sendMultimodalChat } from "@/lib/api";
+import ARTryOnModal from "@/components/product/ARTryOnModal";
+import CatalogProductImage from "@/components/CatalogProductImage";
+import { getChatHistory, getOrdersWebSocketUrl, getProduct, requestOrderReturn, sendMultimodalChat, trackOrders } from "@/lib/api";
 import { useSpeechRecognition } from "@/lib/useSpeechRecognition";
-import type { ChatCard, ChatConversation, ChatMessage } from "@/lib/types";
+import { getARModelForProduct } from "@/lib/arIntent";
+import type { ChatBundleCard, ChatCard, ChatConversation, ChatMessage, ChatOperationCard, ChatOutfitCard, ProductDetail } from "@/lib/types";
 
 export default function MessagesClient() {
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
@@ -22,6 +25,10 @@ export default function MessagesClient() {
   const galleryInputRef = useRef<HTMLInputElement | null>(null);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const [pendingImageUrl, setPendingImageUrl] = useState<string | null>(null);
+  const [operationResults, setOperationResults] = useState<Record<string, string>>({});
+  const [arProduct, setArProduct] = useState<ProductDetail | null>(null);
+  const [arLoadingSlug, setArLoadingSlug] = useState<string | null>(null);
+  const messageInputRef = useRef<HTMLInputElement | null>(null);
 
   const { listening, interim, start: startVoice, stop: stopVoice } = useSpeechRecognition({
     onFinal: (text) => setDraft((current) => (current ? `${current} ${text}` : text)),
@@ -31,6 +38,10 @@ export default function MessagesClient() {
     () => conversations.find((conversation) => conversation.id === activeId) ?? null,
     [conversations, activeId],
   );
+  const trackedOrderRefs = useMemo(() => (active?.messages ?? [])
+    .filter((message) => message.card_type === "order_tracking" && message.card && "order_ref" in message.card)
+    .map((message) => (message.card as ChatOperationCard).order_ref)
+    .join(","), [active?.messages]);
 
   useEffect(() => {
     let cancelled = false;
@@ -57,6 +68,30 @@ export default function MessagesClient() {
   }, [active?.messages.length, streamingText, pendingUserText, pendingImageUrl]);
 
   useEffect(() => {
+    if (!trackedOrderRefs) return;
+    const socket = new WebSocket(getOrdersWebSocketUrl());
+    const refs = new Set(trackedOrderRefs.split(","));
+    socket.onmessage = (message) => {
+      try {
+        const event = JSON.parse(message.data) as { type?: string; order_ref?: string };
+        if (event.type !== "order_update" || !event.order_ref || !refs.has(event.order_ref)) return;
+        void trackOrders("", event.order_ref).then(({ orders }) => {
+          const latest = orders[0];
+          if (!latest) return;
+          setConversations((current) => current.map((conversation) => conversation.id === activeId
+            ? { ...conversation, messages: conversation.messages.map((chatMessage) => {
+              if (chatMessage.card_type !== "order_tracking" || !chatMessage.card || !("order_ref" in chatMessage.card) || chatMessage.card.order_ref !== latest.order_ref) return chatMessage;
+              return { ...chatMessage, card: { ...chatMessage.card, status: latest.status, timeline: latest.timeline } };
+            }) }
+            : conversation));
+        }).catch(() => undefined);
+      } catch { /* Ignore non-order notification frames. */ }
+    };
+    const ping = window.setInterval(() => { if (socket.readyState === WebSocket.OPEN) socket.send("ping"); }, 20000);
+    return () => { window.clearInterval(ping); socket.close(); };
+  }, [activeId, trackedOrderRefs]);
+
+  useEffect(() => {
     if (!selectedImage) {
       setPreviewUrl(null);
       return;
@@ -71,6 +106,9 @@ export default function MessagesClient() {
     if ((!text && !selectedImage) || sending) return;
     const image = selectedImage;
     setSending(true);
+    setDraft("");
+    setSelectedImage(null);
+    messageInputRef.current?.focus({ preventScroll: true });
     setError(null);
     setPendingUserText(text || "Image attached");
     setPendingImageUrl(previewUrl);
@@ -81,8 +119,6 @@ export default function MessagesClient() {
         conversation_id: activeId ?? undefined,
         image: image ?? undefined,
       });
-      setDraft("");
-      setSelectedImage(null);
       try {
         const history = await getChatHistory();
         setConversations(history);
@@ -102,8 +138,8 @@ export default function MessagesClient() {
           id: `local-assistant-${now}`,
           role: "assistant",
           content: response.reply_text,
-          card_type: response.products.length ? "products" : null,
-          card: response.products,
+          card_type: response.card_type ?? (response.products.length ? "products" : null),
+          card: response.card ?? response.products,
           created_at: now,
         };
         setConversations((current) => {
@@ -127,6 +163,34 @@ export default function MessagesClient() {
       setPendingImageUrl(null);
     }
   };
+
+  async function confirmReturn(card: ChatOperationCard) {
+    const key = `${card.order_ref}:return`;
+    setOperationResults((current) => ({ ...current, [key]: "Submitting request for review…" }));
+    try {
+      const requestType = card.request_type || "return";
+      const result = await requestOrderReturn({ order_ref: card.order_ref, request_type: requestType, reason: card.reason || `Buyer requested ${requestType}`, confirmed: true });
+      setOperationResults((current) => ({ ...current, [key]: result.message }));
+    } catch (cause) {
+      setOperationResults((current) => ({ ...current, [key]: cause instanceof Error ? cause.message : "Return request could not be submitted." }));
+    }
+  }
+
+  async function launchTryOn(slug: string) {
+    if (!getARModelForProduct({ slug })) return;
+    setArLoadingSlug(slug);
+    try {
+      setArProduct(await getProduct(slug));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not open the product try-on preview.");
+    } finally {
+      setArLoadingSlug(null);
+    }
+  }
+
+  function reviewBundle(messageId: number | string) {
+    setOperationResults((current) => ({ ...current, [`bundle:${messageId}`]: "Reviewed. This quote is non-binding; standard checkout and financial consent apply to the actual total." }));
+  }
 
   const startNewConversation = () => {
     setActiveId(null);
@@ -171,14 +235,50 @@ export default function MessagesClient() {
             const cards: ChatCard[] = Array.isArray(message.card)
               ? message.card
               : message.card && "slug" in message.card ? [message.card] : [];
+            const operationCard = message.card && "order_ref" in message.card ? message.card as ChatOperationCard : null;
+            if (message.card_type === "order_tracking" && operationCard) return (
+              <div key={`tracking-${message.id}`} className="mt-3 rounded-xl border border-base-600 bg-base-900/80 p-3">
+                <p className="text-xs font-semibold text-ink-100">{operationCard.product_name} · {operationCard.order_ref}</p>
+                <ol className="mt-2 grid gap-1 sm:grid-cols-4">{(operationCard.timeline ?? []).map((stage) => <li key={stage.label} className={`rounded-lg px-2 py-1.5 text-[10px] ${stage.status === "done" ? "bg-emerald-500/10 text-emerald-300" : "bg-base-800 text-ink-500"}`}>{stage.label}: {stage.status === "done" ? "Complete" : "Not yet reported"}</li>)}</ol>
+              </div>
+            );
+            if (message.card_type === "return_confirmation" && operationCard) {
+              const result = operationResults[`${operationCard.order_ref}:return`];
+              return (
+                <div key={`return-${message.id}`} className="mt-3 rounded-xl border border-amber-400/25 bg-base-900/80 p-3">
+                  <p className="text-xs font-semibold capitalize text-ink-100">{operationCard.request_type || "return"} request · {operationCard.product_name}</p>
+                  <p className="mt-1 text-[10px] text-ink-400">{operationCard.explanation}</p>
+                  {operationCard.eligible && <button type="button" onClick={() => void confirmReturn(operationCard)} disabled={Boolean(result)} className="mt-2 rounded-lg bg-astra-gradient px-3 py-2 text-[10px] font-semibold capitalize text-white disabled:opacity-50">{result ? "Request sent" : `Confirm ${operationCard.request_type || "return"} request for review`}</button>}
+                  {result && <p role="status" className="mt-2 text-[10px] text-emerald-300">{result}</p>}
+                  <p className="mt-2 text-[9px] text-ink-600">Submitting creates a review request only; it does not issue a refund or change the order.</p>
+                </div>
+              );
+            }
+            const bundleCard = message.card && "offer_total" in message.card ? message.card as ChatBundleCard : null;
+            const outfitCard = message.card_type === "outfit_recommendations" && message.card && "outfits" in message.card ? message.card as ChatOutfitCard : null;
+            if (outfitCard?.outfits[0]) return <div key={`outfit-${message.id}`} className="mt-3 grid gap-2 sm:grid-cols-2">
+              {outfitCard.outfits[0].items.map(({ slot, product, reasons }) => <article key={`${message.id}-${product.id}`} className="flex min-w-0 gap-2 rounded-xl border border-base-600 bg-base-900/70 p-2">
+                <div className="h-16 w-14 shrink-0 overflow-hidden rounded-lg"><CatalogProductImage src={product.image_url} title={`${product.title} ${product.color}`} category={product.category} className="h-full w-full object-cover" /></div>
+                <div className="min-w-0"><span className="text-[9px] font-semibold uppercase text-cyan-300">{slot}</span><p className="line-clamp-2 text-[11px] font-semibold text-ink-100">{product.title}</p><p className="text-[10px] text-ink-400">Rs. {product.price.toLocaleString()}</p>{reasons.map((reason) => <p key={reason} className="text-[9px] text-ink-500">{reason}</p>)}</div>
+              </article>)}
+            </div>;
+            if (message.card_type === "bundle_advisory" && bundleCard) {
+              const review = operationResults[`bundle:${message.id}`];
+              return (
+                <div key={`bundle-${message.id}`} className="mt-3 rounded-xl border border-violet-400/25 bg-base-900/80 p-3">
+                  <ul className="grid gap-1.5">{bundleCard.items.map((line) => <li key={line.product_id} className="flex justify-between gap-2 text-[10px] text-ink-300"><span>{line.title} × {line.quantity} · seller floor Rs. {line.seller_floor.toLocaleString()}</span><span>Rs. {line.line_total.toLocaleString()}</span></li>)}</ul>
+                  <p className="mt-2 flex justify-between border-t border-base-700 pt-2 text-[11px] font-bold text-ink-100"><span>Estimate · savings Rs. {bundleCard.estimated_savings.toLocaleString()}</span><span>Rs. {bundleCard.offer_total.toLocaleString()}</span></p>
+                  <button type="button" onClick={() => reviewBundle(message.id)} disabled={Boolean(review)} className="mt-2 rounded-lg border border-violet-400/40 px-3 py-2 text-[10px] font-semibold text-violet-200">{review ? "Offer reviewed" : "Review this non-binding offer"}</button>
+                  {review && <p role="status" className="mt-2 text-[10px] text-emerald-300">{review}</p>}
+                  <p className="mt-2 text-[9px] text-ink-600">No order, cart price, or payment is changed by this estimate.</p>
+                </div>
+              );
+            }
             return cards.length > 0 && (
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 {cards.map((card) => (
-                  <Link
-                    key={card.slug}
-                    href={`/product/${card.slug}`}
-                    className="flex items-center gap-3 rounded-xl border border-base-600 bg-base-900/70 p-2.5 transition hover:border-astra-indigo"
-                  >
+                  <article key={card.slug} className="rounded-xl border border-base-600 bg-base-900/70 p-2.5 transition hover:border-astra-indigo">
+                    <Link href={`/product/${card.slug}`} className="flex items-center gap-3">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={card.image} alt={card.name} className="h-12 w-12 rounded-lg object-cover" />
                     <span className="min-w-0">
@@ -188,7 +288,19 @@ export default function MessagesClient() {
                         Rs. {card.price.toLocaleString()} · {card.trust}% trust · {card.stock} in stock
                       </span>
                     </span>
-                  </Link>
+                    </Link>
+                    {getARModelForProduct({ slug: card.slug }) && (
+                      <button
+                        type="button"
+                        onClick={() => void launchTryOn(card.slug)}
+                        disabled={arLoadingSlug === card.slug}
+                        className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-astra-violet/40 bg-base-800 px-2.5 py-1.5 text-[10px] font-semibold text-ink-100 transition hover:border-astra-violet hover:text-white disabled:opacity-60"
+                      >
+                        <Camera className="h-3.5 w-3.5 text-astra-cyan" />
+                        {arLoadingSlug === card.slug ? "Opening preview…" : "Try On"}
+                      </button>
+                    )}
+                  </article>
                 ))}
               </div>
             );
@@ -198,6 +310,7 @@ export default function MessagesClient() {
     );
 
   return (
+    <>
     <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
       <aside className="glass h-fit rounded-xl2 p-4">
         <div className="mb-3 flex items-center justify-between gap-2">
@@ -339,8 +452,17 @@ export default function MessagesClient() {
             <Camera className="h-4 w-4" />
           </button>
           <input
+            ref={messageInputRef}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
+            inputMode="text"
+            onPaste={(event) => {
+              const pastedImage = Array.from(event.clipboardData.items)
+                .find((item) => item.type.startsWith("image/"))?.getAsFile();
+              if (!pastedImage) return;
+              event.preventDefault();
+              chooseImage(pastedImage);
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
@@ -361,5 +483,7 @@ export default function MessagesClient() {
         </div>
       </div>
     </div>
+    {arProduct && <ARTryOnModal product={arProduct} onClose={() => setArProduct(null)} />}
+    </>
   );
 }

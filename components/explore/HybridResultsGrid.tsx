@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { Heart, Scale, SearchX, ShieldCheck, Star, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import CatalogProductImage from "@/components/CatalogProductImage";
+import CrossBorderShippingBadge from "@/components/CrossBorderShippingBadge";
 export type ExploreProduct = {
   id: string;
   title: string;
@@ -15,8 +17,12 @@ export type ExploreProduct = {
   is_verified_seller: boolean;
   badge: string | null;
   image_url: string;
+  origin_country: "PK" | "CN" | "IR" | "AE";
   semantic_tags: string[];
   trust: number;
+  availability: "in_stock" | "out_of_stock" | "unavailable" | "unknown";
+  stock_count: number | null;
+  match_reasons?: string[];
 };
 
 export default function HybridResultsGrid({
@@ -92,10 +98,9 @@ export default function HybridResultsGrid({
               href={`/product/${p.id}`}
               className="glass glass-hover block rounded-xl2 p-3"
             >
-              <div
-                className="photo-frame relative mb-3 aspect-square rounded-lg"
-                style={{ backgroundImage: `url(${p.image_url})` }}
-              >
+              <div className="photo-frame relative mb-3 aspect-square overflow-hidden rounded-lg">
+                <CatalogProductImage src={p.image_url} title={p.title} category={p.category} className="h-full w-full object-cover" />
+                <CrossBorderShippingBadge originCountry={p.origin_country} />
                 {p.badge && (
                   <span className="absolute left-2 top-2 rounded-full bg-astra-gradient px-2 py-0.5 text-[9px] font-semibold text-white">
                     {p.badge}
@@ -132,6 +137,8 @@ export default function HybridResultsGrid({
                 <span className="ml-auto text-[10px] font-medium text-signal-good">{p.trust}% trust</span>
               </div>
               <p className="mt-1 font-display text-sm font-semibold text-ink-100">{p.formatted_price}</p>
+              {p.match_reasons?.map((reason) => <p key={reason} className="mt-1 text-[10px] text-astra-cyan">{reason}</p>)}
+              <p className="text-[10px] text-ink-500">{p.availability === "in_stock" ? `In stock${p.stock_count === null ? "" : ` · ${p.stock_count} available`}` : p.availability === "out_of_stock" ? "Out of stock" : p.availability === "unavailable" ? "Listing unavailable" : "Availability not tracked"}</p>
               <p className="truncate text-[10px] text-ink-500">{p.seller_name} · {p.total_reviews.toLocaleString()} reviews</p>
               <button type="button" onClick={(event) => { event.preventDefault(); toggleCompare(p.id); }} className={["mt-3 inline-flex items-center gap-1 text-[10px] font-medium transition", compareIds.includes(p.id) ? "text-astra-cyan" : "text-ink-500 hover:text-ink-100"].join(" ")}><Scale className="h-3 w-3" /> {compareIds.includes(p.id) ? "Added to compare" : "Compare"}</button>
             </Link>

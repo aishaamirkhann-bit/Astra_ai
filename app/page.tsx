@@ -4,7 +4,7 @@ import HomeClient from "@/components/HomeClient";
 import { getHomePage } from "@/lib/api";
 
 export default async function HomePage() {
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   if (process.env.NODE_ENV === "production" && !cookieStore.has("astra_token")) redirect("/login");
   const cookieHeader = cookieStore.getAll().map(({ name, value }) => `${name}=${value}`).join("; ");
   let data;

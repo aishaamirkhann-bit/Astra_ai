@@ -69,8 +69,7 @@ export default function VerifyOtpPage() {
       storeSession(session);
       clearPendingOtp();
       const dashboard = session.user.role === "seller" ? "/seller/dashboard" : "/buyer/dashboard";
-      router.replace(consumePostAuthRedirect(dashboard));
-      router.refresh();
+      window.location.assign(consumePostAuthRedirect(dashboard));
     } catch {
       setError("Incorrect or expired code. Try again or resend.");
       setDigits(Array(CODE_LENGTH).fill(""));

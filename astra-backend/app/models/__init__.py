@@ -7,6 +7,7 @@ from app.models.product import Product
 from app.models.wallet import FinancialConsentLog, UserWallet, Wallet, WalletLedgerEntry, WalletTransaction
 from app.models.goal import Goal
 from app.models.order import Order, OrderStatus
+from app.models.order_return import OrderReturnRequest
 from app.models.pipeline import PipelineRun, PipelineStageLog, AuditLog
 from app.models.notification import Notification
 from app.models.deal import Deal, DealAuditLog, DealReservation, MarketPriceHistory, SellerMetric
@@ -21,6 +22,9 @@ from app.models.payment import CardTopUp, SellerPayoutLedger, StripeCheckoutPaym
 from app.models.seller_profile import SellerProfile
 from app.models.seller_wallet import SellerWallet, SellerWalletEntry
 from app.models.sales_goal import SalesGoal
+from app.models.shopping_preference import ShoppingPreference
+from app.models.cod_risk import CodRiskEvent
+from app.models.b2b import B2BBid, DistributionLedger, VendorQuote, VendorSubscription
 
 # Listings and orders stay in canonical commerce tables so buyer catalog and
 # escrow records remain aligned. Seller balances and sales targets are isolated.
@@ -38,6 +42,7 @@ __all__ = [
     "Goal",
     "Order",
     "OrderStatus",
+    "OrderReturnRequest",
     "PipelineRun",
     "PipelineStageLog",
     "AuditLog",
@@ -73,4 +78,10 @@ __all__ = [
     "SellerWallet",
     "SellerWalletEntry",
     "SalesGoal",
+    "ShoppingPreference",
+    "CodRiskEvent",
+    "B2BBid",
+    "VendorQuote",
+    "DistributionLedger",
+    "VendorSubscription",
 ]

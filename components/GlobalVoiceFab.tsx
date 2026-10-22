@@ -1,19 +1,49 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Mic, X, ArrowUpRight } from "lucide-react";
 import { useSpeechRecognition } from "@/lib/useSpeechRecognition";
+import { isARIntent } from "@/lib/arIntent";
+import { getVoiceWebSocketUrl } from "@/lib/api";
+import { flushVoiceEvents, interruptVoiceOutput, parseVoiceEvent, sendVoiceTranscript } from "@/lib/voiceStream.mjs";
 
 const BAR_HEIGHTS = [6, 16, 24, 12, 20, 8];
 
 export default function GlobalVoiceFab() {
   const [open, setOpen] = useState(false);
   const [lastTranscript, setLastTranscript] = useState("");
+  const [streamStatus, setStreamStatus] = useState("ready");
+  const voiceSocket = useRef<WebSocket | null>(null);
+  const pendingEvents = useRef<string[]>([]);
+
+  useEffect(() => {
+    if (!open) return;
+    const socket = new WebSocket(getVoiceWebSocketUrl());
+    voiceSocket.current = socket;
+    socket.onopen = () => flushVoiceEvents(socket, pendingEvents.current);
+    socket.onmessage = (message) => {
+      const event = parseVoiceEvent(message.data) as { type?: string; final?: boolean } | null;
+      if (event?.type === "transcript" && event.final) setStreamStatus("ready");
+      if (event?.type === "interrupted") setStreamStatus("interrupted");
+    };
+    socket.onclose = () => { if (voiceSocket.current === socket) voiceSocket.current = null; };
+    return () => { socket.close(); if (voiceSocket.current === socket) voiceSocket.current = null; };
+  }, [open]);
 
   const { listening, interim, start, stop } = useSpeechRecognition({
     onFinal: (text) => {
       setLastTranscript(text);
+      setStreamStatus("processing");
+      sendVoiceTranscript(voiceSocket.current, pendingEvents.current, text, true);
+      if (isARIntent(text)) {
+        if (window.location.pathname.startsWith("/product/")) {
+          window.dispatchEvent(new CustomEvent("astra:ar-intent"));
+        } else {
+          setLastTranscript("Open a product page to preview it in AR");
+        }
+        return;
+      }
       window.dispatchEvent(new CustomEvent("astra:search", { detail: { query: text, commit: true } }));
     },
   });
@@ -34,7 +64,10 @@ export default function GlobalVoiceFab() {
           </div>
 
           <button
-            onClick={() => (listening ? stop() : start())}
+            onClick={() => {
+              if (listening) stop();
+              else { interruptVoiceOutput(voiceSocket.current, window.speechSynthesis); start(); }
+            }}
             aria-pressed={listening}
             aria-label={listening ? "Stop voice search" : "Start voice search"}
             className={[
@@ -56,7 +89,7 @@ export default function GlobalVoiceFab() {
           </div>
 
           <p className="mt-2 min-h-8 text-center text-[11px] text-ink-300">
-            {listening ? interim || "Sun rahe hain..." : lastTranscript || "Bolo, ASTRA suney ga"}
+            {listening ? interim || "Sun rahe hain..." : streamStatus === "processing" ? "Processing..." : streamStatus === "interrupted" ? "Interrupted" : lastTranscript || "Bolo, ASTRA suney ga"}
           </p>
 
           <Link

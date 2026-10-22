@@ -27,6 +27,7 @@ class Order(Base):
     storage = Column(Text, nullable=False, default="")
     price = Column(Float, nullable=False)
     checkout_session_id = Column(Integer, ForeignKey("checkout_sessions.id", ondelete="SET NULL"), nullable=True, index=True)
+    negotiation_session_id = Column(Integer, ForeignKey("negotiation_sessions.id", ondelete="SET NULL"), nullable=True, unique=True)
     status = Column(Enum(OrderStatus), default=OrderStatus.PENDING_APPROVAL)
     # Escrow lifecycle: HELD while funds sit in reversible checkout,
     # RELEASED to the seller once confirmed, REFUNDED on reversal/dispute.

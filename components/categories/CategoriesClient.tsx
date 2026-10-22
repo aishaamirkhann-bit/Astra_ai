@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { ArrowRight, RefreshCw, Sparkles } from "lucide-react";
 import { API_URL } from "@/lib/api";
@@ -14,6 +15,24 @@ const CATEGORY_GRADIENTS: Record<string, string> = {
   "Makeup & Beauty": "linear-gradient(135deg, rgba(251,113,133,0.20), rgba(236,72,153,0.08))",
   "Home Appliances": "linear-gradient(135deg, rgba(16,185,129,0.20), rgba(45,212,191,0.08))",
   "Home & Living": "linear-gradient(135deg, rgba(250,204,21,0.18), rgba(34,197,94,0.08))",
+};
+
+const CATEGORY_IMAGES: Record<string, string> = {
+  Mobiles: "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=1000&q=85",
+  "Laptops & Computers": "https://images.unsplash.com/photo-1496181133206-80ce9b88a853?auto=format&fit=crop&w=1000&q=85",
+  Laptops: "https://images.unsplash.com/photo-1496181133206-80ce9b88a853?auto=format&fit=crop&w=1000&q=85",
+  "Audio & Wearables": "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=1000&q=85",
+  Wearables: "https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=1000&q=85",
+  Jewelry: "https://images.unsplash.com/photo-1617038220319-276d3cfab638?auto=format&fit=crop&w=1000&q=85",
+  Accessories: "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=1000&q=85",
+  "Clothing & Fashion": "https://images.unsplash.com/photo-1598033129183-c4f50c736f10?auto=format&fit=crop&w=1000&q=85",
+  "Dresses & Fashion": "https://images.unsplash.com/photo-1595777457583-95e059d581b8?auto=format&fit=crop&w=1000&q=85",
+  "Electronics & Computing": "https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?auto=format&fit=crop&w=1000&q=85",
+  "Makeup & Beauty": "https://images.unsplash.com/photo-1596462502278-27bfdc403348?auto=format&fit=crop&w=1000&q=85",
+  "Home Appliances": "https://images.unsplash.com/photo-1585515320310-259814833e62?auto=format&fit=crop&w=1000&q=85",
+  "Home & Living": "https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=1000&q=85",
+  "Home Decor": "https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=1000&q=85",
+  Furniture: "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&w=1000&q=85",
 };
 
 type Category = { id: string; name: string; slug: string; product_count: number };
@@ -76,9 +95,11 @@ export default function CategoriesClient() {
       {!loading && !error && categories.length > 0 && <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
         {categories.map((category) => {
           const background = CATEGORY_GRADIENTS[category.name] ?? "linear-gradient(135deg, rgba(148,163,184,0.18), rgba(15,23,42,0.08))";
+          const image = CATEGORY_IMAGES[category.name] ?? CATEGORY_IMAGES["Home & Living"];
           return (
             <Link key={category.id} href={`/categories/${category.slug}`} className="glass glass-hover group overflow-hidden rounded-xl2">
               <div className="photo-frame relative aspect-[4/3]" style={{ background }}>
+                <Image unoptimized src={image} alt={`${category.name} products`} fill sizes="(max-width: 640px) 50vw, (max-width: 1280px) 33vw, 25vw" className="object-cover transition duration-500 group-hover:scale-105" />
                 <div className="absolute inset-0 bg-gradient-to-t from-base-950/50 via-transparent to-transparent" />
                 <span className="absolute left-3 top-3 rounded-full border border-white/15 bg-base-950/50 px-2 py-1 text-[10px] font-medium text-ink-100 backdrop-blur">Explore</span>
               </div>

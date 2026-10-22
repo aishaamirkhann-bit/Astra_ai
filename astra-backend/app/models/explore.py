@@ -1,4 +1,4 @@
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 
 class ProductModel(TypedDict):
@@ -6,6 +6,7 @@ class ProductModel(TypedDict):
     title: str
     category: str
     category_id: str | None
+    origin_country: NotRequired[str]
     price: float
     rating: float
     total_reviews: int

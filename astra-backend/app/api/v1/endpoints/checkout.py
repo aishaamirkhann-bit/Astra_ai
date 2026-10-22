@@ -17,6 +17,7 @@ from app.schemas.checkout import (
 from app.services.checkout_fsm import (
     abandon_checkout_session,
     confirm_checkout_session,
+    create_negotiated_checkout_session,
     get_owned_checkout_session,
     create_or_reuse_checkout_session,
 )
@@ -50,7 +51,12 @@ def create_checkout_session(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    checkout = create_or_reuse_checkout_session(db, current_user, payload.shipping_address)
+    if payload.negotiation_session_id is not None:
+        checkout = create_negotiated_checkout_session(
+            db, current_user, payload.shipping_address, payload.negotiation_session_id,
+        )
+    else:
+        checkout = create_or_reuse_checkout_session(db, current_user, payload.shipping_address)
     db.commit()
     db.refresh(checkout)
     return _session_out(db, checkout)

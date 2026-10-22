@@ -5,10 +5,84 @@ import { useState } from "react";
 import { Check, Heart, Loader2, ShoppingCart, ShieldCheck, Star, X } from "lucide-react";
 import { addToCart, createShoppingGoal, updateShoppingGoal } from "@/lib/api";
 import type { Product } from "@/lib/types";
+import CatalogProductImage from "@/components/CatalogProductImage";
+import CrossBorderShippingBadge from "@/components/CrossBorderShippingBadge";
+import { useRegionalCurrency } from "@/lib/useRegionalCurrency";
 
 export default function ProductGrid({ products }: { products: Product[] }) {
-  const [busy, setBusy] = useState<string | null>(null); const [saved, setSaved] = useState<Map<string, number>>(new Map()); const [toast, setToast] = useState("");
-  async function add(product: Product) { setBusy(`cart-${product.slug}`); try { const result = await addToCart(product.slug); setToast(`${result.message}. Cart: ${result.cart_total_quantity} item(s).`); } catch (e) { setToast(e instanceof Error ? e.message : "Could not add item"); } finally { setBusy(null); } }
-  async function save(product: Product) { setBusy(`save-${product.slug}`); try { const existing = saved.get(product.slug); if (existing) { await updateShoppingGoal(existing, { status: "Paused" }); setSaved((all) => { const next = new Map(all); next.delete(product.slug); return next; }); setToast("Removed from active saved goals."); } else { const goal = await createShoppingGoal({ target_title: product.name, target_price: product.price, category: product.category, priority_level: "Medium" }); setSaved((all) => new Map(all).set(product.slug, goal.goal_id)); setToast(`${product.name} saved as a shopping goal.`); } } catch (e) { setToast(e instanceof Error ? e.message : "Could not update saved product"); } finally { setBusy(null); } }
-  return <section><div className="mb-4 flex items-center justify-between"><h2 className="font-display text-sm font-semibold text-ink-100">Recommended For You</h2><Link href="/explore" className="text-[11px] font-medium text-ink-500 hover:text-ink-100">View all</Link></div>{products.length === 0 ? <div className="glass rounded-xl2 p-8 text-center text-xs text-ink-500">No verified products are available yet.</div> : <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">{products.map((product) => <article key={product.slug} className="glass glass-hover group rounded-xl2 p-3"><Link href={`/product/${product.slug}`}><div className="photo-frame relative mb-3 aspect-square rounded-lg" style={{ backgroundImage: `url(${product.image})` }}>{product.tag && <span className="absolute left-2 top-2 rounded-full bg-astra-gradient px-2 py-0.5 text-[9px] font-semibold text-white">{product.tag}</span>}</div><p className="truncate text-xs font-medium text-ink-100">{product.name}</p><div className="mt-1 flex items-center justify-between"><span className="flex items-center gap-1 text-[10px] text-ink-500"><Star className="h-3 w-3 fill-signal-hold text-signal-hold" />{product.rating}</span><span className="flex items-center gap-1 text-[10px] text-signal-good"><ShieldCheck className="h-3 w-3" />{product.trust}</span></div><p className="mt-1 font-display text-sm font-semibold text-ink-100">{product.price_display}</p></Link><div className="mt-3 grid grid-cols-[36px_1fr] gap-2"><button onClick={() => void save(product)} disabled={busy === `save-${product.slug}`} aria-label={saved.has(product.slug) ? `Unsave ${product.name}` : `Save ${product.name}`} className={`grid place-items-center rounded-lg border border-base-600 ${saved.has(product.slug) ? "bg-rose-500/10 text-rose-400" : "text-ink-500 hover:text-rose-400"}`}>{busy === `save-${product.slug}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Heart className={`h-3.5 w-3.5 ${saved.has(product.slug) ? "fill-current" : ""}`} />}</button><button onClick={() => void add(product)} disabled={busy === `cart-${product.slug}`} className="flex items-center justify-center gap-1.5 rounded-lg border border-base-600 py-2 text-[11px] font-medium text-ink-300 hover:border-astra-indigo/50 hover:text-ink-100 disabled:opacity-60">{busy === `cart-${product.slug}` ? <Loader2 className="h-3 w-3 animate-spin" /> : <ShoppingCart className="h-3 w-3" />} Add</button></div></article>)}</div>}{toast && <button onClick={() => setToast("")} className="fixed bottom-6 right-6 z-[90] flex max-w-sm items-center gap-2 rounded-xl border border-emerald-400/20 bg-slate-950 p-4 text-left text-xs text-slate-100 shadow-2xl"><Check className="h-4 w-4 text-emerald-400" /><span>{toast}</span><X className="h-3.5 w-3.5 text-slate-500" /></button>}</section>;
+  const { formatPrice } = useRegionalCurrency();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [saved, setSaved] = useState<Map<string, number>>(new Map());
+  const [toast, setToast] = useState("");
+
+  async function add(product: Product) {
+    setBusy(`cart-${product.slug}`);
+    try {
+      const result = await addToCart(product.slug);
+      setToast(`${result.message}. Cart: ${result.cart_total_quantity} item(s).`);
+    } catch (cause) {
+      setToast(cause instanceof Error ? cause.message : "Could not add item");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function save(product: Product) {
+    setBusy(`save-${product.slug}`);
+    try {
+      const existing = saved.get(product.slug);
+      if (existing) {
+        await updateShoppingGoal(existing, { status: "Paused" });
+        setSaved((all) => { const next = new Map(all); next.delete(product.slug); return next; });
+        setToast("Removed from active saved goals.");
+      } else {
+        const goal = await createShoppingGoal({ target_title: product.name, target_price: product.price, category: product.category, priority_level: "Medium" });
+        setSaved((all) => new Map(all).set(product.slug, goal.goal_id));
+        setToast(`${product.name} saved as a shopping goal.`);
+      }
+    } catch (cause) {
+      setToast(cause instanceof Error ? cause.message : "Could not update saved product");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <section>
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="font-display text-sm font-semibold text-ink-100">Recommended For You</h2>
+        <Link href="/explore" className="text-[11px] font-medium text-ink-500 hover:text-ink-100">View all</Link>
+      </div>
+      {products.length === 0 ? <div className="glass rounded-xl2 p-8 text-center text-xs text-ink-500">No verified products are available yet.</div> : (
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          {products.map((product) => (
+            <article key={product.slug} className="glass glass-hover group rounded-xl2 p-3">
+              <Link href={`/product/${product.slug}`}>
+                <div className="photo-frame relative mb-3 aspect-square overflow-hidden rounded-lg">
+                  <CatalogProductImage src={product.image} title={product.name} category={product.category} className="h-full w-full object-cover" />
+                  <CrossBorderShippingBadge originCountry={product.origin_country} />
+                  {product.tag && <span className="absolute left-2 top-2 rounded-full bg-astra-gradient px-2 py-0.5 text-[9px] font-semibold text-white">{product.tag}</span>}
+                </div>
+                <p className="truncate text-xs font-medium text-ink-100">{product.name}</p>
+                <div className="mt-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1 text-[10px] text-ink-500"><Star className="h-3 w-3 fill-signal-hold text-signal-hold" />{product.rating}</span>
+                  <span className="flex items-center gap-1 text-[10px] text-signal-good"><ShieldCheck className="h-3 w-3" />{product.trust}</span>
+                </div>
+                <p className="mt-1 font-display text-sm font-semibold text-ink-100" title="Indicative display conversion; final price is confirmed in checkout">{formatPrice(product.price)}</p>
+              </Link>
+              <div className="mt-3 grid grid-cols-[36px_1fr] gap-2">
+                <button type="button" onClick={() => void save(product)} disabled={busy === `save-${product.slug}`} aria-label={saved.has(product.slug) ? `Unsave ${product.name}` : `Save ${product.name}`} className={`grid place-items-center rounded-lg border border-base-600 ${saved.has(product.slug) ? "bg-rose-500/10 text-rose-400" : "text-ink-500 hover:text-rose-400"}`}>
+                  {busy === `save-${product.slug}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Heart className={`h-3.5 w-3.5 ${saved.has(product.slug) ? "fill-current" : ""}`} />}
+                </button>
+                <button type="button" onClick={() => void add(product)} disabled={busy === `cart-${product.slug}`} className="flex items-center justify-center gap-1.5 rounded-lg border border-base-600 py-2 text-[11px] font-medium text-ink-300 hover:border-astra-indigo/50 hover:text-ink-100 disabled:opacity-60">
+                  {busy === `cart-${product.slug}` ? <Loader2 className="h-3 w-3 animate-spin" /> : <ShoppingCart className="h-3 w-3" />} Add
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+      {toast && <button type="button" onClick={() => setToast("")} className="fixed bottom-6 right-6 z-[90] flex max-w-sm items-center gap-2 rounded-xl border border-emerald-400/20 bg-slate-950 p-4 text-left text-xs text-slate-100 shadow-2xl"><Check className="h-4 w-4 text-emerald-400" /><span>{toast}</span><X className="h-3.5 w-3.5 text-slate-500" /></button>}
+    </section>
+  );
 }

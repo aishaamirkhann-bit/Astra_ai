@@ -46,6 +46,7 @@ def product_to_out(product, wallet=None):
         verified_seller=product.is_verified_seller,
         trust=product.trust,
         category=product.category,
+        origin_country=product.origin_country or "PK",
         image=product.image_url,
         description=product.description,
     )

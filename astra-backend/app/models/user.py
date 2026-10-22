@@ -12,6 +12,7 @@ class User(Base):
     email = Column(String(120), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
     preferred_language = Column(String(20), default="Roman Urdu")  # English / اردو / Roman Urdu
+    country = Column(String(2), nullable=False, default="PK", server_default="PK")
 
     # --- Dynamic role, chosen by the user at signup ---
     # "buyer" | "seller" today; kept as a free string (not a DB enum) so a

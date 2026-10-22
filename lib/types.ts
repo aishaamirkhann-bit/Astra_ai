@@ -21,6 +21,7 @@ export interface Product {
   seller: string;
   trust: number;
   category: string;
+  origin_country: "PK" | "CN" | "IR" | "AE";
   image: string | null;
   description: string | null;
 }
@@ -74,7 +75,10 @@ export type CheckoutSessionStatus = "awaiting_consent" | "reversal_window_open" 
 export interface CheckoutSession { checkout_ref: string; total: number; shipping_address: string; status: CheckoutSessionStatus; expires_at: string; confirmed_at: string | null; cancelled_at: string | null; order_refs: string[]; }
 export interface CheckoutSessionConfirmation extends CheckoutSession { wallet_balance: number; created: boolean; }
 export interface ChatCard { slug: string; name: string; category?: string; price: number; image: string; seller: string; trust: number; stock: number; }
-export interface ChatMessage { id: number | string; role: "user" | "assistant"; content: string; card_type: "product" | "products" | "image_attachment" | null; card: ChatCard | ChatCard[] | { filename?: string } | null; created_at?: string; }
+export interface ChatOperationCard { order_ref: string; product_name: string; status: string; request_type?: "return" | "exchange"; timeline?: Array<{ label: string; status: string }>; eligible?: boolean; explanation?: string; reason?: string; }
+export interface ChatBundleCard { items: Array<{ product_id: string; title: string; quantity: number; list_unit_price: number; seller_floor: number; offered_unit_price: number; line_total: number }>; list_total: number; offer_total: number; estimated_savings: number; binding: false; requires_buyer_approval: true; message: string; }
+export interface ChatOutfitCard { outfits: Array<{ items: Array<{ slot: string; product: { id: string; title: string; category: string; color: string; price: number; image_url: string; origin_country: string }; reasons: string[] }>; estimated_total: number }>; message: string; }
+export interface ChatMessage { id: number | string; role: "user" | "assistant"; content: string; card_type: "product" | "products" | "image_attachment" | "order_tracking" | "return_confirmation" | "bundle_advisory" | "outfit_recommendations" | null; card: ChatCard | ChatCard[] | ChatOperationCard | ChatBundleCard | ChatOutfitCard | { filename?: string } | null; created_at?: string; }
 export interface ChatConversation { id: number; title: string; messages: ChatMessage[]; }
 
 export interface DealOut {
@@ -433,6 +437,7 @@ export interface LoginResponse {
     name: string;
     email: string;
     preferred_language: string;
+    country: "PK" | "CN" | "IR" | "AE";
     role: UserRole;
   };
 }
@@ -510,7 +515,10 @@ export interface VoiceIntentResult {
     rating: number;
     seller_name: string;
     is_verified_seller: boolean;
+    origin_country?: string;
   } | null;
+  cross_border_advisory?: { message: string; estimated_eta: string; planning_duty_allowance_amount: number; advisory_only: true; included_in_checkout: false } | null;
+  nlu_locale?: string;
   alternatives: Array<{ id: string; title: string; category: string; price: number; image_url: string; trust: number }>;
   auto_checkout: boolean;
   confidence: number;
@@ -548,6 +556,7 @@ export interface ExploreProductSummary {
   id: string;
   title: string;
   category: string;
+  origin_country: "PK" | "CN" | "IR" | "AE";
   price: number;
   formatted_price: string;
   rating: number;
@@ -558,6 +567,8 @@ export interface ExploreProductSummary {
   image_url: string;
   semantic_tags: string[];
   trust: number;
+  availability: "in_stock" | "out_of_stock" | "unavailable" | "unknown";
+  stock_count: number | null;
 }
 
 /** Cross-border zero-fee micro-escrow settlement simulation. */

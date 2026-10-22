@@ -36,6 +36,7 @@ type InventoryForm = {
   specifications: string;
   image_url: string;
   price: string;
+  seller_price_floor: string;
   stock_count: string;
 };
 
@@ -51,6 +52,7 @@ const EMPTY_FORM: InventoryForm = {
   specifications: "",
   image_url: "",
   price: "",
+  seller_price_floor: "",
   stock_count: "",
 };
 
@@ -131,6 +133,7 @@ export default function SellerInventoryForm() {
         specifications: specificationsText(product.specifications),
         image_url: product.image_url,
         price: String(product.market_price),
+        seller_price_floor: "",
         stock_count: "",
       });
       showToast("Product Details Loaded from Barcode", "success");
@@ -158,6 +161,7 @@ export default function SellerInventoryForm() {
 
   useEffect(() => {
     if (!cameraOpen) return;
+    const preview = videoRef.current;
     let stream: MediaStream | undefined;
     let frame = 0;
     let cancelled = false;
@@ -214,7 +218,7 @@ export default function SellerInventoryForm() {
       cancelled = true;
       window.cancelAnimationFrame(frame);
       stream?.getTracks().forEach((track) => track.stop());
-      if (videoRef.current) videoRef.current.srcObject = null;
+      if (preview) preview.srcObject = null;
     };
   }, [cameraOpen]);
 
@@ -230,6 +234,7 @@ export default function SellerInventoryForm() {
         description: form.description,
         image_url: form.image_url || "/images/products/fallback-tech.jpg",
         price: Number(form.price),
+        ...(form.seller_price_floor ? { seller_price_floor: Number(form.seller_price_floor) } : {}),
         stock_count: Number(form.stock_count),
         ...(barcode.trim() ? { barcode: barcode.trim() } : {}),
         brand: form.brand,
@@ -253,7 +258,7 @@ export default function SellerInventoryForm() {
     }
   }
 
-  async function edit(item: SellerInventoryItem, field: "price" | "stock_count", value: number) {
+  async function edit(item: SellerInventoryItem, field: "price" | "seller_price_floor" | "stock_count", value: number) {
     setError("");
     try {
       await updateSellerInventory(item.id, { [field]: value });
@@ -381,7 +386,7 @@ export default function SellerInventoryForm() {
           />
         </label>
         <label className="flex flex-col gap-1.5 text-[11px] font-medium text-ink-300 md:col-span-2">
-          Product specifications <span className="font-normal text-ink-500">(one “name: value” per line)</span>
+          Product specifications <span className="font-normal text-ink-500">(one “name: value” per line; add model_url: https://…/model.glb for room AR)</span>
           <textarea
             aria-label="Product specifications"
             rows={3}
@@ -444,6 +449,20 @@ export default function SellerInventoryForm() {
           {verified && matchedProduct && <span className="text-[10px] text-ink-500">Suggested market reference: Rs. {matchedProduct.market_price.toLocaleString("en-PK")}</span>}
         </label>
         <label className="flex flex-col gap-1.5 text-[11px] font-medium text-ink-300">
+          Minimum bundle price (PKR)
+          <input
+            aria-label="Minimum bundle price"
+            type="number"
+            min="1"
+            max={form.price || undefined}
+            value={form.seller_price_floor}
+            onChange={(event) => setForm({ ...form, seller_price_floor: event.target.value })}
+            placeholder={form.price || "Defaults to selling price"}
+            className="rounded-lg border border-base-600 bg-base-800 px-3 py-2.5 text-xs text-ink-100 placeholder:text-ink-500 focus:border-astra-violet/50 focus:outline-none"
+          />
+          <span className="text-[10px] text-ink-500">ASTRA will not quote a bundle below this price. Blank means the selling price.</span>
+        </label>
+        <label className="flex flex-col gap-1.5 text-[11px] font-medium text-ink-300">
           Stock quantity
           <input
             aria-label="Stock"
@@ -484,6 +503,7 @@ export default function SellerInventoryForm() {
           <thead className="text-ink-500">
             <tr>
               <th className="p-2">Product</th>
+              <th>Bundle floor</th>
               <th>Price</th>
               <th>Stock</th>
               <th>Status</th>
@@ -497,6 +517,21 @@ export default function SellerInventoryForm() {
                   {item.title}
                   <span className="block text-[10px] text-ink-500">{item.category}</span>
                   {item.barcode && <span className="block text-[10px] text-ink-500">Barcode: {item.barcode}</span>}
+                </td>
+                <td>
+                  <input
+                    aria-label={`Bundle floor for ${item.title}`}
+                    type="number"
+                    min="1"
+                    max={item.price}
+                    defaultValue={item.seller_price_floor}
+                    onBlur={(event) => {
+                      const floor = Number(event.target.value);
+                      if (Number.isFinite(floor) && floor > 0 && floor <= item.price && floor !== item.seller_price_floor) void edit(item, "seller_price_floor", floor);
+                      else if (floor > item.price) event.target.value = String(item.seller_price_floor);
+                    }}
+                    className="w-24 rounded bg-base-800 p-2 text-ink-100"
+                  />
                 </td>
                 <td>
                   <input
@@ -536,10 +571,10 @@ export default function SellerInventoryForm() {
               </tr>
             ))}
             {!loading && items.length === 0 && (
-              <tr><td colSpan={5} className="p-6 text-center text-ink-500">No listings yet. Add a product to start your inventory.</td></tr>
+              <tr><td colSpan={6} className="p-6 text-center text-ink-500">No listings yet. Add a product to start your inventory.</td></tr>
             )}
             {loading && (
-              <tr><td colSpan={5} className="p-6 text-center text-ink-500">Loading inventory…</td></tr>
+              <tr><td colSpan={6} className="p-6 text-center text-ink-500">Loading inventory…</td></tr>
             )}
           </tbody>
         </table>

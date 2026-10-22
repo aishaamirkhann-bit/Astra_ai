@@ -74,6 +74,8 @@ class FinancialConsentLog(Base):
     otp_expires_at = Column(DateTime(timezone=True), nullable=True)
     otp_attempts = Column(Integer, nullable=False, default=0)
     consumed_at = Column(DateTime(timezone=True), nullable=True)
+    order_snapshot_hash = Column(String(64), nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (

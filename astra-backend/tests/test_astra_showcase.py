@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.core.database import SessionLocal
 from app.main import app
+from app.core.config import settings
 from app.models.user import User
 from app.models.wallet import UserWallet
 
@@ -45,7 +46,8 @@ def test_voice_intent_resolves_buy_with_budget() -> None:
     intent = result.json()
     assert intent["intent"] == "buy"
     assert intent["budget"] == 200000
-    assert intent["auto_checkout"] is True
+    assert intent["auto_checkout"] is False
+    assert intent["action"]["type"] == "search"
     assert intent["matched_product"] is not None
     assert intent["matched_product"]["price"] <= 200000
 
@@ -54,20 +56,29 @@ def test_voice_intent_resolves_buy_with_budget() -> None:
     urdu_intent = roman_urdu.json()
     assert urdu_intent["intent"] == "buy"
     assert urdu_intent["budget"] == 150000
+    assert urdu_intent["auto_checkout"] is False
 
     plain = anonymous.post("/api/v1/explore/intent", data={"query": "headphones"})
     assert plain.status_code == 200
     assert plain.json()["intent"] != "buy"
 
 
-def test_voice_intent_accepts_optional_image_signal() -> None:
+def test_voice_intent_accepts_optional_image_signal(monkeypatch, valid_png_bytes: bytes) -> None:
     """Image never used to reach intent resolution at all — now it can travel
     alongside the transcript and widen product matching."""
+    from app.services import vision as vision_service
+
+    monkeypatch.setattr(
+        vision_service, "analyze_image",
+        lambda image_bytes, filename="": vision_service.VisionResult(
+            labels=["watch"], query="watch", confidence=0.9, provider="mock-vision",
+        ),
+    )
     anonymous = TestClient(app)
     result = anonymous.post(
         "/api/v1/explore/intent",
         data={"query": "kharido"},
-        files={"image_file": ("watch-product.jpg", b"fake-image", "image/jpeg")},
+        files={"image_file": ("watch-product.png", valid_png_bytes, "image/png")},
     )
     assert result.status_code == 200, result.text
     intent = result.json()
@@ -212,12 +223,13 @@ def test_swarm_log_and_sub_30s_resolution_timeline() -> None:
 
 
 def test_a2a_negotiation_websocket_settles(auth_token: str) -> None:
-    with TestClient(app) as client:
-        with client.websocket_connect(f"/ws/negotiation/samsung-galaxy-s25-ultra?token={auth_token}") as websocket:
+    with TestClient(app, cookies={settings.AUTH_COOKIE_NAME: auth_token}) as client:
+        with client.websocket_connect("/ws/negotiation/samsung-galaxy-s25-ultra") as websocket:
+            websocket.send_json({"type": "start", "quantity": 1, "size": "Standard", "color": "Black", "storage": "256GB"})
             started = websocket.receive_json()
             assert started["type"] == "a2a_started"
             params = started["params"]
-            assert params["buyer_budget"] < params["seller_ask"]
+            assert params["buyer_opening_offer"] <= params["buyer_budget"]
             assert params["delay_threshold_ms"] > 0
 
             settled = None
@@ -231,4 +243,7 @@ def test_a2a_negotiation_websocket_settles(auth_token: str) -> None:
             assert settled is not None
             assert settled["final_price"] <= params["seller_ask"]
             assert settled["rounds"] >= 1
+            assert settled["session_id"] > 0
+            assert settled["quantity"] == 1
+            assert settled["final_total"] == settled["final_price"]
             websocket.close()

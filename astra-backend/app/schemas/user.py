@@ -1,7 +1,8 @@
 from typing import Literal
-from pydantic import BaseModel, EmailStr, ConfigDict, Field
+from pydantic import BaseModel, EmailStr, ConfigDict, Field, field_validator
 
 Role = Literal["buyer", "seller"]
+CountryCode = Literal["PK", "CN", "IR", "AE"]
 
 
 class UserOut(BaseModel):
@@ -10,6 +11,7 @@ class UserOut(BaseModel):
     email: EmailStr
     preferred_language: str
     role: Role
+    country: CountryCode = "PK"
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -25,6 +27,23 @@ class RegisterRequest(BaseModel):
     password: str = Field(min_length=6, max_length=128)
     role: Role = "buyer"
     preferred_language: str = "Roman Urdu"
+    country: str = Field(default="PK", pattern=r"^(PK|CN|IR|AE)$")
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) < 2:
+            raise ValueError("Name must contain at least 2 non-space characters")
+        return value
+
+    @field_validator("country", mode="before")
+    @classmethod
+    def normalize_country(cls, value: str) -> str:
+        normalized = str(value or "PK").strip().upper()
+        if normalized not in {"PK", "CN", "IR", "AE"}:
+            raise ValueError("Country must be PK, CN, IR, or AE")
+        return normalized
 
 
 class ChangeRoleRequest(BaseModel):

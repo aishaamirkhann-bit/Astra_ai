@@ -127,35 +127,60 @@ def test_invalid_query_type_returns_validation_error() -> None:
     assert response.status_code == 422
 
 
-def test_image_search_accepts_image_upload() -> None:
+def test_image_search_accepts_image_upload(monkeypatch, valid_png_bytes: bytes) -> None:
+    from app.services import vision as vision_service
+
+    monkeypatch.setattr(
+        vision_service, "analyze_image",
+        lambda image_bytes, filename="": vision_service.VisionResult(
+            labels=["smartphone"], query="smartphone mobile", confidence=0.9, provider="mock-vision",
+        ),
+    )
     response = client.post(
         "/api/v1/explore/search",
         data={"query_type": "image"},
-        files={"image_file": ("phone.jpg", b"fake-image", "image/jpeg")},
+        files={"image_file": ("phone.png", valid_png_bytes, "image/png")},
     )
     assert response.status_code == 200
     assert response.json()["total_results"] >= 1
 
 
-def test_image_search_uses_filename_category_hint() -> None:
+def test_image_search_uses_mocked_vision_result(monkeypatch, valid_png_bytes: bytes) -> None:
+    from app.services import vision as vision_service
+
+    monkeypatch.setattr(
+        vision_service, "analyze_image",
+        lambda image_bytes, filename="": vision_service.VisionResult(
+            labels=["headphones", "audio"], query="headphones audio", confidence=0.9, provider="mock-vision",
+        ),
+    )
     response = client.post(
         "/api/v1/explore/search",
         data={"query_type": "image"},
-        files={"image_file": ("headphones-product.jpg", b"fake-image", "image/jpeg")},
+        files={"image_file": ("headphones-product.png", valid_png_bytes, "image/png")},
     )
     assert response.status_code == 200
     assert response.json()["query"] == "headphones audio"
     assert all(item["category"] == "Audio & Wearables" for item in response.json()["items"])
 
 
-def test_multimodal_query_type_combines_text_and_image() -> None:
+def test_multimodal_query_type_combines_text_and_image(monkeypatch, valid_png_bytes: bytes) -> None:
+    from app.services import vision as vision_service
+
+    monkeypatch.setattr(
+        vision_service, "analyze_image",
+        lambda image_bytes, filename="": vision_service.VisionResult(
+            labels=["headphones", "audio"], query="headphones audio", confidence=0.9, provider="mock-vision",
+        ),
+    )
     response = client.post(
         "/api/v1/explore/search",
         data={"query_type": "multimodal", "text_query": "budget"},
-        files={"image_file": ("headphones-product.jpg", b"fake-image", "image/jpeg")},
+        files={"image_file": ("headphones-product.png", valid_png_bytes, "image/png")},
     )
     assert response.status_code == 200
-    assert response.json()["query"] == "budget headphones audio"
+    assert response.json()["query"] == "budget"
+    assert response.json()["image_labels"] == ["headphones", "audio"]
 
 
 def test_search_response_includes_fusion_trace() -> None:
@@ -171,13 +196,21 @@ def test_search_response_includes_fusion_trace() -> None:
     assert response.json()["image_labels"] == []
 
 
-def test_search_fuses_text_and_image_signals_together() -> None:
+def test_search_fuses_text_and_image_signals_together(monkeypatch, valid_png_bytes: bytes) -> None:
     """Text and an image can now arrive in the same request without a dedicated
     query_type — every present signal is fused, not just one selected modality."""
+    from app.services import vision as vision_service
+
+    monkeypatch.setattr(
+        vision_service, "analyze_image",
+        lambda image_bytes, filename="": vision_service.VisionResult(
+            labels=["laptop computer"], query="laptop computer", confidence=0.9, provider="mock-vision",
+        ),
+    )
     response = client.post(
         "/api/v1/explore/search",
         data={"text_query": "laptop"},
-        files={"image_file": ("laptop-deal.jpg", b"fake-image", "image/jpeg")},
+        files={"image_file": ("laptop-deal.png", valid_png_bytes, "image/png")},
     )
     assert response.status_code == 200
     body = response.json()
@@ -202,7 +235,7 @@ def test_voice_search_falls_back_when_stt_provider_configured_but_unreachable(mo
     assert response.json()["query"] == "gaming laptop 200k ke under"
 
 
-def test_image_search_uses_configured_vision_provider(monkeypatch) -> None:
+def test_image_search_uses_configured_vision_provider(monkeypatch, valid_png_bytes: bytes) -> None:
     from app.services import vision as vision_service
 
     monkeypatch.setattr(
@@ -215,7 +248,7 @@ def test_image_search_uses_configured_vision_provider(monkeypatch) -> None:
     response = client.post(
         "/api/v1/explore/search",
         data={"query_type": "image"},
-        files={"image_file": ("mystery.jpg", b"fake-image", "image/jpeg")},
+        files={"image_file": ("mystery.png", valid_png_bytes, "image/png")},
     )
     assert response.status_code == 200
     body = response.json()

@@ -11,6 +11,9 @@ def apply_sqlite_compatibility_migrations(engine: Engine) -> None:
         if "otp_sent_at" not in user_columns:
             with engine.begin() as connection:
                 connection.execute(text("ALTER TABLE users ADD COLUMN otp_sent_at DATETIME"))
+        if "country" not in user_columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE users ADD COLUMN country VARCHAR(2) NOT NULL DEFAULT 'PK'"))
 
     if not inspect(engine).has_table("products"):
         return
@@ -28,6 +31,8 @@ def apply_sqlite_compatibility_migrations(engine: Engine) -> None:
         if "embedding" not in columns:
             connection.execute(text("ALTER TABLE products ADD COLUMN embedding VECTOR(1536)"))
         product_metadata_columns = {
+            "origin_country": "VARCHAR(2) NOT NULL DEFAULT 'PK'",
+            "seller_price_floor": "FLOAT NOT NULL DEFAULT 0",
             "barcode": "VARCHAR(14)",
             "barcode_verified": "BOOLEAN NOT NULL DEFAULT 0",
             "listing_status": "VARCHAR(10) NOT NULL DEFAULT 'active'",
@@ -42,6 +47,7 @@ def apply_sqlite_compatibility_migrations(engine: Engine) -> None:
         for column, definition in product_metadata_columns.items():
             if column not in columns:
                 connection.execute(text(f"ALTER TABLE products ADD COLUMN {column} {definition}"))
+        connection.execute(text("UPDATE products SET seller_price_floor = base_price WHERE seller_price_floor <= 0"))
         connection.execute(text("CREATE INDEX IF NOT EXISTS ix_products_barcode ON products (barcode)"))
         connection.execute(
             text(
@@ -86,6 +92,33 @@ def apply_sqlite_compatibility_migrations(engine: Engine) -> None:
             if "checkout_session_id" not in order_columns:
                 connection.execute(text("ALTER TABLE orders ADD COLUMN checkout_session_id INTEGER"))
                 connection.execute(text("CREATE INDEX IF NOT EXISTS ix_orders_checkout_session_id ON orders (checkout_session_id)"))
+            if "negotiation_session_id" not in order_columns:
+                connection.execute(text("ALTER TABLE orders ADD COLUMN negotiation_session_id INTEGER"))
+                connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_orders_negotiation_session_id ON orders (negotiation_session_id)"))
+
+    if inspect(engine).has_table("order_return_requests"):
+        return_columns = {column["name"] for column in inspect(engine).get_columns("order_return_requests")}
+        if "request_type" not in return_columns:
+            with engine.begin() as connection:
+                connection.execute(text("ALTER TABLE order_return_requests ADD COLUMN request_type VARCHAR(16) NOT NULL DEFAULT 'return'"))
+
+    if inspect(engine).has_table("negotiation_sessions"):
+        negotiation_columns = {column["name"] for column in inspect(engine).get_columns("negotiation_sessions")}
+        with engine.begin() as connection:
+            columns_to_add = {
+                "seller_id": "VARCHAR NOT NULL DEFAULT ''",
+                "quantity": "INTEGER NOT NULL DEFAULT 1",
+                "size": "TEXT NOT NULL DEFAULT ''",
+                "color": "TEXT NOT NULL DEFAULT ''",
+                "storage": "TEXT NOT NULL DEFAULT ''",
+                "expires_at": "DATETIME",
+                "buyer_approved_at": "DATETIME",
+                "checkout_session_id": "INTEGER",
+            }
+            for column, definition in columns_to_add.items():
+                if column not in negotiation_columns:
+                    connection.execute(text(f"ALTER TABLE negotiation_sessions ADD COLUMN {column} {definition}"))
+            connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_negotiation_sessions_checkout_session_id ON negotiation_sessions (checkout_session_id)"))
 
     if inspect(engine).has_table("seller_profiles"):
         seller_profile_columns = {column["name"] for column in inspect(engine).get_columns("seller_profiles")}
@@ -132,6 +165,10 @@ def apply_sqlite_compatibility_migrations(engine: Engine) -> None:
             if "reference_checkout_id" not in consent_columns:
                 connection.execute(text("ALTER TABLE financial_consent_logs ADD COLUMN reference_checkout_id INTEGER"))
                 connection.execute(text("CREATE INDEX IF NOT EXISTS ix_financial_consent_checkout_status ON financial_consent_logs (reference_checkout_id, status, consumed_at)"))
+            if "order_snapshot_hash" not in consent_columns:
+                connection.execute(text("ALTER TABLE financial_consent_logs ADD COLUMN order_snapshot_hash VARCHAR(64)"))
+            if "expires_at" not in consent_columns:
+                connection.execute(text("ALTER TABLE financial_consent_logs ADD COLUMN expires_at DATETIME"))
 
     if inspect(engine).has_table("notifications"):
         with engine.begin() as connection:

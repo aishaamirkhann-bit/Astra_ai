@@ -12,6 +12,7 @@ from app.models.pipeline import AuditLog
 from app.models.product import Product
 from app.models.seller_profile import SellerProfile
 from app.models.user import User
+from app.api.v1.endpoints.seller import _seller_slug
 
 
 def _seller_client() -> TestClient:
@@ -27,6 +28,26 @@ def test_buyer_cannot_manage_seller_inventory(auth_client) -> None:
     assert auth_client.get("/api/v1/seller/dashboard-stats").status_code == 403
     assert auth_client.post("/api/v1/seller/products/barcode-lookup", json={"barcode": "890123456001"}).status_code == 403
     assert auth_client.get("/api/v1/seller/wallet").status_code == 403
+
+
+def test_seller_order_list_and_dispatch_are_scoped_to_product_owner() -> None:
+    client = _seller_client()
+    with SessionLocal() as db:
+        seller = db.query(User).filter(User.role == "seller").first()
+        assert seller is not None
+        seller_slug = _seller_slug(seller)
+        foreign_order = db.query(Order).join(Product).filter(Product.seller_id != seller_slug).first()
+        assert foreign_order is not None
+        foreign_order_ref = foreign_order.order_ref
+
+    response = client.get("/api/v1/seller/orders")
+    assert response.status_code == 200
+    visible_refs = {item["order_ref"] for item in response.json()}
+    with SessionLocal() as db:
+        visible_products = db.query(Product.seller_id).join(Order, Order.product_id == Product.id).filter(Order.order_ref.in_(visible_refs)).all()
+        assert all(product_seller_id == seller_slug for (product_seller_id,) in visible_products)
+    assert foreign_order_ref not in visible_refs
+    assert client.post(f"/api/v1/seller/orders/{foreign_order_ref}/dispatch").status_code == 404
 
 
 def test_account_role_can_switch_between_buyer_and_seller(auth_client) -> None:
