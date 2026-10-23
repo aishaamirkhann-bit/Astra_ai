@@ -5,6 +5,13 @@ on:
     branches: [main, "feat/**"]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   backend:
     name: Backend tests (SQLite)
@@ -13,7 +20,16 @@ jobs:
       run:
         working-directory: astra-backend
     env:
+      APP_ENV: test
+      SECRET_KEY: ci-only-secret-key-not-for-production
+      DATABASE_URL: sqlite:///./ci.db
+      ASTRA_DB_PATH: ${{ runner.temp }}/astra-backend-products.db
       REFRESH_PRODUCTS_ON_STARTUP: "false"
+      MARKET_FEED_ENABLED: "false"
+      OTP_DEBUG_LOG: "true"
+      REDIS_URL: ""
+      STRIPE_SECRET_KEY: ""
+      STRIPE_WEBHOOK_SECRET: ""
     steps:
       - uses: actions/checkout@v4
 
@@ -23,18 +39,24 @@ jobs:
           cache: pip
           cache-dependency-path: astra-backend/requirements.txt
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+      - name: Install backend dependencies
+        run: python -m pip install -r requirements.txt
 
       - name: Seed demo data
         run: python -m app.db.seed
 
-      - name: Run pytest
-        run: python -m pytest tests/ -q -p no:cacheprovider
+      - name: Run backend tests
+        run: python -m pytest -q -p no:cacheprovider
 
   frontend:
     name: Frontend type-check & build
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    env:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_TELEMETRY_DISABLED: "1"
     steps:
       - uses: actions/checkout@v4
 
@@ -42,8 +64,9 @@ jobs:
         with:
           node-version: 20
           cache: npm
+          cache-dependency-path: package-lock.json
 
-      - name: Install dependencies
+      - name: Install frontend dependencies
         run: npm ci
 
       - name: Type check
@@ -56,7 +79,18 @@ jobs:
     name: Browser E2E (Playwright)
     runs-on: ubuntu-latest
     env:
+      APP_ENV: test
+      SECRET_KEY: ci-only-secret-key-not-for-production
+      DATABASE_URL: sqlite:///./ci.db
+      ASTRA_DB_PATH: ${{ runner.temp }}/astra-e2e-products.db
       REFRESH_PRODUCTS_ON_STARTUP: "false"
+      MARKET_FEED_ENABLED: "false"
+      OTP_DEBUG_LOG: "true"
+      REDIS_URL: ""
+      STRIPE_SECRET_KEY: ""
+      STRIPE_WEBHOOK_SECRET: ""
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_TELEMETRY_DISABLED: "1"
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
     steps:
       - uses: actions/checkout@v4
@@ -68,7 +102,8 @@ jobs:
           cache-dependency-path: astra-backend/requirements.txt
 
       - name: Install backend dependencies
-        run: pip install -r astra-backend/requirements.txt
+        working-directory: astra-backend
+        run: python -m pip install -r requirements.txt
 
       - name: Seed demo data
         working-directory: astra-backend
@@ -78,6 +113,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
+          cache-dependency-path: package-lock.json
 
       - name: Install frontend dependencies
         run: npm ci
@@ -86,13 +122,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/.playwright-browsers
-          key: ${{ runner.os }}-playwright-${{ hashFiles('**/package-lock.json') }}
+          key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
 
-      - name: Install Playwright browser
+      - name: Install Playwright browser and OS dependencies
         run: npx playwright install --with-deps chromium
 
       - name: Run E2E suite
-        run: npx playwright test
+        run: npm run test:e2e
 
   docker:
     name: Production Docker build
@@ -100,8 +136,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Prepare env file
+      - name: Prepare Docker Compose environment
         run: cp .env.production.example .env.production
 
+      - name: Validate production Compose configuration
+        run: docker compose --env-file .env.production -f docker-compose.prod.yml config --quiet
+
       - name: Build production images
-        run: docker compose -f docker-compose.prod.yml build
+        run: docker compose --env-file .env.production -f docker-compose.prod.yml build
