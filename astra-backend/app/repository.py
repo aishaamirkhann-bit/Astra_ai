@@ -52,7 +52,7 @@ class ProductRepository:
     @contextmanager
     def _connect_readonly(self):
         """Open the existing catalogue without creating files or tables."""
-        if self.database_url:
+        if self.is_postgres:
             connection = self._connect()
             try:
                 connection.execute("SET TRANSACTION READ ONLY")
@@ -60,10 +60,15 @@ class ProductRepository:
             finally:
                 connection.close()
             return
-        if not self.database_path.is_file():
+        sqlite_url = make_url(self.database_url) if self.database_url else None
+        sqlite_path = Path(sqlite_url.database) if sqlite_url and sqlite_url.database not in (None, ":memory:") else self.database_path
+        if sqlite_url and sqlite_url.database == ":memory:":
             yield None
             return
-        uri = f"{self.database_path.resolve().as_uri()}?mode=ro"
+        if not sqlite_path.is_file():
+            yield None
+            return
+        uri = f"{sqlite_path.resolve().as_uri()}?mode=ro"
         connection = sqlite3.connect(uri, uri=True)
         connection.row_factory = sqlite3.Row
         try:
@@ -72,7 +77,7 @@ class ProductRepository:
             connection.close()
 
     def _table_columns(self, connection: Any, table_name: str) -> set[str]:
-        if self.database_url:
+        if self.is_postgres:
             rows = connection.execute(
                 "SELECT column_name FROM information_schema.columns "
                 "WHERE table_schema = current_schema() AND table_name = %s",
@@ -241,15 +246,15 @@ class ProductRepository:
             connection.executemany(update_sql, rows)
 
     def _ensure_product_origin_column(self, connection: Any) -> None:
-        if self.database_url:
-            connection.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS origin_country TEXT NOT NULL DEFAULT 'PK'")
+        if self.is_postgres:
+            connection.execute("ALTER TABLE explore_products ADD COLUMN IF NOT EXISTS origin_country TEXT NOT NULL DEFAULT 'PK'")
         else:
-            columns = {row[1] for row in connection.execute("PRAGMA table_info(products)").fetchall()}
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(explore_products)").fetchall()}
             if "origin_country" not in columns:
-                connection.execute("ALTER TABLE products ADD COLUMN origin_country TEXT NOT NULL DEFAULT 'PK'")
+                connection.execute("ALTER TABLE explore_products ADD COLUMN origin_country TEXT NOT NULL DEFAULT 'PK'")
 
     def _refresh_origin_countries(self, connection: Any, placeholder: str) -> None:
-        update_sql = f"UPDATE products SET origin_country = {placeholder} WHERE id = {placeholder}"
+        update_sql = f"UPDATE explore_products SET origin_country = {placeholder} WHERE id = {placeholder}"
         origin_rows = [(product.get("origin_country", "PK"), product["id"]) for product in PRODUCTS]
         if placeholder == "%s":
             with connection.cursor() as cursor:
@@ -269,8 +274,8 @@ class ProductRepository:
         if legacy is None or canonical is None:
             return
 
-        legacy_id = legacy["id"] if self.database_url else legacy[0]
-        canonical_id = canonical["id"] if self.database_url else canonical[0]
+        legacy_id = legacy["id"] if self.is_postgres else legacy[0]
+        canonical_id = canonical["id"] if self.is_postgres else canonical[0]
         connection.execute(
             f"UPDATE explore_products SET category = {placeholder}, category_id = {placeholder} "
             f"WHERE category = {placeholder} OR category_id = {placeholder}",
@@ -338,26 +343,26 @@ class ProductRepository:
 
     def list_products(self) -> list[dict[str, Any]]:
         with self._connect_readonly() as connection:
-            if connection is None or not self._table_exists(connection, "products"):
+            if connection is None or not self._table_exists(connection, PRODUCTS_TABLE):
                 return []
-            rows = connection.execute("SELECT * FROM products").fetchall()
+            rows = connection.execute(f"SELECT * FROM {PRODUCTS_TABLE}").fetchall()
         products = [product for product in map(self._deserialize, rows) if self._visible(product)]
         catalog_order = {product["id"]: index for index, product in enumerate(PRODUCTS)}
         return sorted(products, key=lambda product: catalog_order.get(product["id"], len(catalog_order)))
 
     def get_product(self, product_id: str) -> dict[str, Any] | None:
         with self._connect_readonly() as connection:
-            if connection is None or not self._table_exists(connection, "products"):
+            if connection is None or not self._table_exists(connection, PRODUCTS_TABLE):
                 return None
-            placeholder = "%s" if self.database_url else "?"
-            row = connection.execute(f"SELECT * FROM products WHERE id = {placeholder}", (product_id,)).fetchone()
+            placeholder = "%s" if self.is_postgres else "?"
+            row = connection.execute(f"SELECT * FROM {PRODUCTS_TABLE} WHERE id = {placeholder}", (product_id,)).fetchone()
         return self._deserialize(row) if row else None
 
     def list_categories(self) -> list[dict[str, Any]]:
         with self._connect_readonly() as connection:
-            if connection is None or not self._table_exists(connection, "categories") or not self._table_exists(connection, "products"):
+            if connection is None or not self._table_exists(connection, CATEGORIES_TABLE) or not self._table_exists(connection, PRODUCTS_TABLE):
                 return []
-            product_columns = self._table_columns(connection, "products")
+            product_columns = self._table_columns(connection, PRODUCTS_TABLE)
             visibility = []
             if "listing_status" in product_columns:
                 visibility.append("p.listing_status = 'active'")
@@ -366,7 +371,7 @@ class ProductRepository:
             join = "p.category_id = c.id" + (" AND " + " AND ".join(visibility) if visibility else "")
             rows = connection.execute(
                 "SELECT c.id, c.name, c.slug, COUNT(p.id) AS product_count "
-                f"FROM categories c LEFT JOIN products p ON {join} "
+                f"FROM {CATEGORIES_TABLE} c LEFT JOIN {PRODUCTS_TABLE} p ON {join} "
                 "GROUP BY c.id, c.name, c.slug ORDER BY c.name"
             ).fetchall()
         return [dict(row) for row in rows]
@@ -375,7 +380,7 @@ class ProductRepository:
         self, category_slug: str, min_price: float, max_price: float, page: int, limit: int, sort_by: str,
         verified_only: bool = False, min_rating: float = 0,
     ) -> tuple[list[dict[str, Any]], int]:
-        placeholder = "%s" if self.database_url else "?"
+        placeholder = "%s" if self.is_postgres else "?"
         order_by = {"price_low_high": "p.price ASC", "price_high_low": "p.price DESC", "rating": "p.rating DESC"}.get(sort_by, "p.rating DESC")
         filters = [f"c.slug = {placeholder}", f"p.price BETWEEN {placeholder} AND {placeholder}", f"p.rating >= {placeholder}"]
         params: list[Any] = [category_slug, min_price, max_price, min_rating]
@@ -384,22 +389,22 @@ class ProductRepository:
         where_clause = " AND ".join(filters)
         offset = (page - 1) * limit
         with self._connect_readonly() as connection:
-            if connection is None or not self._table_exists(connection, "products") or not self._table_exists(connection, "categories"):
+            if connection is None or not self._table_exists(connection, PRODUCTS_TABLE) or not self._table_exists(connection, CATEGORIES_TABLE):
                 return [], 0
-            columns = self._table_columns(connection, "products")
+            columns = self._table_columns(connection, PRODUCTS_TABLE)
             if "listing_status" in columns:
                 filters.append("p.listing_status = 'active'")
             if "stock_count" in columns:
                 filters.append("p.stock_count > 0")
             where_clause = " AND ".join(filters)
             count_sql = (
-                f"SELECT COUNT(*) AS total FROM explore_products p JOIN explore_categories c ON c.id = p.category_id "
+                f"SELECT COUNT(*) AS total FROM {PRODUCTS_TABLE} p JOIN {CATEGORIES_TABLE} c ON c.id = p.category_id "
                 f"WHERE {where_clause}"
             )
             count_row = connection.execute(count_sql, tuple(params)).fetchone()
             total = count_row["total"] if self.is_postgres else count_row[0]
             query_sql = (
-                f"SELECT p.* FROM explore_products p JOIN explore_categories c ON c.id = p.category_id "
+                f"SELECT p.* FROM {PRODUCTS_TABLE} p JOIN {CATEGORIES_TABLE} c ON c.id = p.category_id "
                 f"WHERE {where_clause} "
                 f"ORDER BY {order_by} LIMIT {placeholder} OFFSET {placeholder}"
             )

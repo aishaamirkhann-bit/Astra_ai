@@ -210,7 +210,7 @@ def _local_demo_google_login(role: Literal["buyer", "seller"], country: Literal[
             return _google_error_redirect("account_creation_failed")
 
     token = create_access_token(subject=str(user.id), extra_claims={"role": user.role})
-    redirect = RedirectResponse(f"{settings.FRONTEND_ORIGIN.rstrip('/')}/auth/callback?mode=local-demo")
+    redirect = RedirectResponse(f"{settings.primary_frontend_url}/auth/callback?mode=local-demo")
     redirect.set_cookie(
         key=settings.AUTH_COOKIE_NAME,
         value=token,

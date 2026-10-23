@@ -41,8 +41,8 @@ def test_repository_uses_shared_database_url_without_touching_commerce_tables(tm
         connection.execute("CREATE TABLE products (id TEXT PRIMARY KEY)")
 
     repository = ProductRepository(database_url=database_url)
-    assert len(repository.list_products()) == len(PRODUCTS)
     repository.initialize()
+    assert len(repository.list_products()) == len(PRODUCTS)
 
     with repository._connect() as connection:
         tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}

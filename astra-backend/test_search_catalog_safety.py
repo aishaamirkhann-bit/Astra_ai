@@ -28,8 +28,8 @@ def test_read_search_keeps_explicit_catalogue_price_and_rows_unchanged(tmp_path:
     repository = ProductRepository(database_path)
     repository.initialize()
     with sqlite3.connect(database_path) as connection:
-        connection.execute("UPDATE products SET price = 123456 WHERE id = ?", ("lenovo-ideapad-slim-5",))
-        before = connection.execute("SELECT id, price FROM products ORDER BY id").fetchall()
+        connection.execute("UPDATE explore_products SET price = 123456 WHERE id = ?", ("lenovo-ideapad-slim-5",))
+        before = connection.execute("SELECT id, price FROM explore_products ORDER BY id").fetchall()
 
     monkeypatch.setattr(explore.product_repository, "list_products", repository.list_products)
     intent = explore.resolve_purchase_intent("buy lenovo laptop")
@@ -44,7 +44,7 @@ def test_read_search_keeps_explicit_catalogue_price_and_rows_unchanged(tmp_path:
     assert result.results
     assert not hasattr(explore, "SessionLocal")
     with sqlite3.connect(database_path) as connection:
-        after = connection.execute("SELECT id, price FROM products ORDER BY id").fetchall()
+        after = connection.execute("SELECT id, price FROM explore_products ORDER BY id").fetchall()
     assert after == before
 
 
@@ -53,11 +53,11 @@ def test_search_excludes_known_inactive_and_empty_products_and_reports_known_sto
     repository = ProductRepository(database_path)
     repository.initialize()
     with sqlite3.connect(database_path) as connection:
-        connection.execute("ALTER TABLE products ADD COLUMN listing_status TEXT")
-        connection.execute("ALTER TABLE products ADD COLUMN stock_count INTEGER")
-        connection.execute("UPDATE products SET listing_status='active', stock_count=0 WHERE id='lenovo-ideapad-slim-5'")
-        connection.execute("UPDATE products SET listing_status='inactive', stock_count=8 WHERE id='dell-xps-13'")
-        connection.execute("UPDATE products SET listing_status='active', stock_count=4, price=98765 WHERE id='sony-wh-1000xm5'")
+        connection.execute("ALTER TABLE explore_products ADD COLUMN listing_status TEXT")
+        connection.execute("ALTER TABLE explore_products ADD COLUMN stock_count INTEGER")
+        connection.execute("UPDATE explore_products SET listing_status='active', stock_count=0 WHERE id='lenovo-ideapad-slim-5'")
+        connection.execute("UPDATE explore_products SET listing_status='inactive', stock_count=8 WHERE id='dell-xps-13'")
+        connection.execute("UPDATE explore_products SET listing_status='active', stock_count=4, price=98765 WHERE id='sony-wh-1000xm5'")
 
     products = {product["id"]: product for product in repository.list_products()}
     assert "lenovo-ideapad-slim-5" not in products

@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.main import app
+from app.models.budget import UserBudget
 from app.models.cart import CartItem
 from app.models.checkout import CheckoutSession
 from app.models.order import Order, OrderStatus
@@ -31,6 +32,11 @@ from app.utils.helpers import as_aware_utc
 def _reset_demo_checkout() -> None:
     with SessionLocal() as db:
         user = db.query(User).filter(User.email == "aisha@astra.ai").one()
+        budget = db.query(UserBudget).filter(UserBudget.user_id == user.id).first()
+        if budget:
+            budget.monthly_limit = 10_000_000
+            budget.current_spent = 0
+            budget.rollover_savings = 0
         pending = db.query(CheckoutSession).filter(
             CheckoutSession.user_id == user.id,
             CheckoutSession.status == "awaiting_consent",

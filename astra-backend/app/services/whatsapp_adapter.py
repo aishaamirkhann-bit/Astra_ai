@@ -107,7 +107,7 @@ def find_products(db: Session, query: str, limit: int = 3) -> list[Product]:
 
 def product_review_url(product_id: str) -> str:
     # Product view only. It carries no auth/session/payment token and starts no checkout.
-    return f"{settings.FRONTEND_ORIGIN.rstrip('/')}/product/{quote(product_id, safe='')}?ref=whatsapp"
+    return f"{settings.primary_frontend_url}/product/{quote(product_id, safe='')}?ref=whatsapp"
 
 
 def destination_country_from_phone(phone: str) -> str | None:

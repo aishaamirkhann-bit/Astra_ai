@@ -34,7 +34,11 @@ export default async function globalSetup(config: FullConfig) {
       origins: [
         {
           origin: config.projects[0]?.use.baseURL ?? "http://localhost:3000",
-          localStorage: [{ name: "astra_user", value: JSON.stringify(user) }],
+          localStorage: [
+            { name: "astra_user", value: JSON.stringify(user) },
+            { name: "astra:region", value: "PK" },
+            { name: "astra:language", value: "Roman Urdu" },
+          ],
         },
       ],
     };

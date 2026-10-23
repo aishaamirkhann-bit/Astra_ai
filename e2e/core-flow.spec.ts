@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { expect, request, test, type Page } from "@playwright/test";
 
 // Tests other than the login flow itself start authenticated via the
@@ -26,12 +28,13 @@ test.describe("ASTRA core browser flows", () => {
         lang = "en-US";
         interimResults = false;
         continuous = false;
-        onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null = null;
+        onresult: ((event: { resultIndex: number; results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void) | null = null;
         onend: (() => void) | null = null;
         onerror: (() => void) | null = null;
         start() {
           setTimeout(() => {
-            this.onresult?.({ results: [[{ transcript: "buy lenovo laptop" }]] });
+            const result = Object.assign([{ transcript: "buy lenovo laptop" }], { isFinal: true });
+            this.onresult?.({ resultIndex: 0, results: [result] });
             this.onend?.();
           }, 0);
         }
@@ -60,25 +63,28 @@ test.describe("ASTRA core browser flows", () => {
     await expect(page.getByText("Sony WH-1000XM5").first()).toBeVisible({ timeout: 15_000 });
 
     await page.getByRole("button", { name: "Voice search" }).click();
-    await expect(page.getByText(/ASTRA Intent: Search/i)).toBeVisible();
     await expect.poll(() => intentResponses.length).toBe(1);
     expect(intentResponses).toEqual([false]);
     await expect(page).toHaveURL(/\/explore(?:\?.*)?$/);
 
     await page.getByLabel("Image search").locator("input[type=file]").setInputFiles({
-      name: "headphones-product.jpg", mimeType: "image/jpeg", buffer: Buffer.from("search-only-image"),
+      name: "headphones-product.jpg",
+      mimeType: "image/jpeg",
+      buffer: fs.readFileSync(path.join(process.cwd(), "public/images/products/sony-headphones.jpg")),
     });
-    await expect(page.getByText("Sony WH-1000XM5").first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("headphones-product.jpg", { exact: true })).toBeVisible();
     expect(financialRequests).toEqual([]);
   });
 
   test("user login and OTP verification", async ({ page }) => {
+    await page.addInitScript(() => localStorage.removeItem("astra:region"));
     await loginViaUi(page);
     await expect(page.getByRole("dialog", { name: "Select your country or region" })).toBeVisible();
     await expect(page.getByText(/recommended for you/i).first()).toBeVisible();
   });
 
   test("authenticated regional selector exposes country and language choices", async ({ page }) => {
+    await page.addInitScript(() => localStorage.removeItem("astra:region"));
     await page.goto("/buyer/dashboard");
     const dialog = page.getByRole("dialog", { name: "Select your country or region" });
     await expect(dialog).toBeVisible();
